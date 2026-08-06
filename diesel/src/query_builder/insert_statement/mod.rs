@@ -477,9 +477,9 @@ where
 }
 
 mod private {
-    use super::InsertStatement;
-    use crate::backend::{Backend, DieselReserveSpecialization};
     use crate::query_builder::{AstPass, QueryFragment, QueryId};
+    use crate::backend::{Backend, DieselReserveSpecialization};
+    use super::InsertStatement;
     use crate::QueryResult;
     use crate::QuerySource;
 
