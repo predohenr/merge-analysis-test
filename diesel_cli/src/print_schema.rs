@@ -546,8 +546,7 @@ fn load_custom_types(
         #[cfg(feature = "mysql")]
         Backend::Mysql => mysql_diesel_types(),
     };
-    let custom_types = data
-        .iter()
+    let custom_types = data.iter()
         .map(|cd| {
             cd.columns()
                 .iter()
@@ -561,8 +560,10 @@ fn load_custom_types(
                         //   - the raw SQL type name (`ty.sql_name`),
                         //   - and the schema-qualified SQL name (`schema.sql_name`), if present.
                         .filter(|ty| {
-                            let schema_qualified =
-                                ty.schema.as_deref().map(|s| format!("{s}.{}", ty.sql_name));
+                            let schema_qualified = ty
+                                .schema
+                                .as_deref()
+                                .map(|s| format!("{s}.{}", ty.sql_name));
                             !config.except_custom_type_definitions.iter().any(|rx| {
                                 rx.is_match(ty.rust_name.as_str())
                                     || rx.is_match(ty.sql_name.as_str())
