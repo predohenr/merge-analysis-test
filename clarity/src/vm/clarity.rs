@@ -4,6 +4,7 @@ use stacks_common::types::StacksEpochId;
 
 use crate::vm::analysis::{AnalysisDatabase, CheckErrorKind, ContractAnalysis, StaticCheckError};
 use crate::vm::ast::errors::{ParseError, ParseErrorKind};
+use crate::vm::analysis::{AnalysisDatabase, CheckErrors, ContractAnalysis, StaticCheckError};
 use crate::vm::ast::{ASTRules, ContractAST};
 use crate::vm::contexts::{AssetMap, Environment, OwnedEnvironment};
 use crate::vm::costs::{ExecutionCost, LimitedCostTracker};
