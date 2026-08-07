@@ -250,7 +250,7 @@ lazy_static! {
         // so any test that crosses it must first deploy the stub (see
         // `check_pox_5_stake_lifecycle` for the pattern). Tests that
         // *intentionally* exercise Epoch 4.0 override these heights -- e.g.
-        // `epochs[Epoch34].end_height = 260; epochs[Epoch40].start_height = 260;`.
+        // `epochs[Epoch34].end_height = 254; epochs[Epoch40].start_height = 254;`.
         // The default 1_002 keeps the boundary off the prepare phase and off
         // reward-cycle offsets 0/1.
         StacksEpoch {
