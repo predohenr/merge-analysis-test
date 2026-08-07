@@ -19,9 +19,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use rusqlite::{params, Connection, Row};
 use stacks::util_lib::db::{table_exists, Error as db_error};
+use rusqlite::{params, Connection, Row};
+use stacks::util_lib::db::Error as db_error;
 
 use crate::event_dispatcher::EventRequestData;
 
