@@ -129,12 +129,23 @@ fn general_return() {
     }
 }
 
+async fn async_block_final_stmt() -> Result<(), ()> {
+    async {
+        return Err(())?;
+    }
+    .await
+}
+
 async fn async_fn() -> Result<(), ()> {
     if true {
         return Err(())?;
         //~^ needless_return_with_question_mark
     }
     Ok(())
+}
+
+fn last_stmt() -> Result<(), ()> {
+    return Err(())?;
 }
 
 async fn async_block() -> Result<(), ()> {
@@ -146,17 +157,6 @@ async fn async_block() -> Result<(), ()> {
         Ok(())
     }
     .await
-}
-
-async fn async_block_final_stmt() -> Result<(), ()> {
-    async {
-        return Err(())?;
-    }
-    .await
-}
-
-fn last_stmt() -> Result<(), ()> {
-    return Err(())?;
 }
 
 fn expr_after_stmt() -> Result<(), ()> {

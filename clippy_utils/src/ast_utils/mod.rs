@@ -847,6 +847,10 @@ fn eq_impl_restriction(l: &ImplRestriction, r: &ImplRestriction) -> bool {
     eq_restriction_kind(&l.kind, &r.kind)
 }
 
+pub fn eq_impl_restriction(l: &ImplRestriction, r: &ImplRestriction) -> bool {
+    eq_restriction_kind(&l.kind, &r.kind)
+}
+
 pub fn eq_mut_restriction(l: &MutRestriction, r: &MutRestriction) -> bool {
     eq_restriction_kind(&l.kind, &r.kind)
 }
