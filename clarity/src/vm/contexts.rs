@@ -2333,6 +2333,99 @@ mod test {
         );
     }
 
+    #[apply(test_clarity_versions)]
+    fn vm_initialize_contract_already_exists(
+        #[case] version: ClarityVersion,
+        #[case] epoch: StacksEpochId,
+    ) {
+        // --- Setup VM ---
+        let mut marf = MemoryBackingStore::new();
+        let mut global_context = GlobalContext::new(
+            false,
+            CHAIN_ID_TESTNET,
+            marf.as_clarity_db(),
+            LimitedCostTracker::new_free(),
+            StacksEpochId::Epoch21, // any modern epoch
+        );
+
+        let mut call_stack = CallStack::new();
+
+        let contract_context =
+            ContractContext::new(QualifiedContractIdentifier::transient(), version);
+
+        let mut env = Environment::new(
+            &mut global_context,
+            &contract_context,
+            &mut call_stack,
+            None,
+            None,
+            None,
+        );
+
+        let contract_id = QualifiedContractIdentifier::local("dup").unwrap();
+
+        let contract_src = "(define-public (ping) (ok u1))";
+
+        let ast = ast::build_ast(&contract_id, contract_src, &mut env, version, epoch).unwrap();
+
+        // First initialization succeeds
+        env.initialize_contract_from_ast(contract_id.clone(), version, &ast, contract_src)
+            .unwrap();
+
+        // Second initialization hits ContractAlreadyExists
+        let err = env
+            .initialize_contract_from_ast(contract_id.clone(), version, &ast, contract_src)
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            VmExecutionError::Unchecked(CheckErrorKind::ContractAlreadyExists(_))
+        ));
+    }
+
+    #[test]
+    fn eval_read_only_empty_program() {
+        // Setup environment
+        let mut tl_env_factory = tl_env_factory();
+        let mut env = tl_env_factory.get_env(StacksEpochId::latest());
+
+        // Construct a dummy contract context
+        let contract_id = QualifiedContractIdentifier::local("dummy-contract").unwrap();
+
+        // Call eval_read_only with an empty program
+        let program = ""; // empty program triggers parsed.is_empty()
+        let err = env.eval_read_only(&contract_id, program).unwrap_err();
+
+        assert!(
+            matches!(
+            err,
+            VmExecutionError::Runtime(RuntimeError::TypeParseFailure(msg), _) if msg.contains("Expected a program of at least length 1")),
+            "Expected a type parse failure"
+        );
+    }
+
+    #[test]
+    fn max_context_depth_exceeded() {
+        let root = LocalContext {
+            function_context: None,
+            parent: None,
+            callable_contracts: HashMap::new(),
+            variables: HashMap::new(),
+            depth: MAX_CONTEXT_DEPTH - 1,
+        };
+        // We should be able to extend once successfully.
+        let result = root.extend().unwrap();
+        // We are now at the MAX_CONTEXT_DEPTH and should fail.
+        let result_2 = result.extend();
+        assert!(matches!(
+            result_2,
+            Err(VmExecutionError::Runtime(
+                RuntimeError::MaxContextDepthReached,
+                _
+            ))
+        ));
+    }
+
     #[test]
     fn asset_map_arithmetic_overflows() {
         let a_contract_id = QualifiedContractIdentifier::local("a").unwrap();
@@ -2392,98 +2485,5 @@ mod test {
             VmExecutionError::Runtime(RuntimeError::TypeParseFailure(msg), _) if msg.contains("Expected a program of at least length 1")),
             "Expected a type parse failure"
         );
-    }
-
-    #[test]
-    fn eval_read_only_empty_program() {
-        // Setup environment
-        let mut tl_env_factory = tl_env_factory();
-        let mut env = tl_env_factory.get_env(StacksEpochId::latest());
-
-        // Construct a dummy contract context
-        let contract_id = QualifiedContractIdentifier::local("dummy-contract").unwrap();
-
-        // Call eval_read_only with an empty program
-        let program = ""; // empty program triggers parsed.is_empty()
-        let err = env.eval_read_only(&contract_id, program).unwrap_err();
-
-        assert!(
-            matches!(
-            err,
-            VmExecutionError::Runtime(RuntimeError::TypeParseFailure(msg), _) if msg.contains("Expected a program of at least length 1")),
-            "Expected a type parse failure"
-        );
-    }
-
-    #[test]
-    fn max_context_depth_exceeded() {
-        let root = LocalContext {
-            function_context: None,
-            parent: None,
-            callable_contracts: HashMap::new(),
-            variables: HashMap::new(),
-            depth: MAX_CONTEXT_DEPTH - 1,
-        };
-        // We should be able to extend once successfully.
-        let result = root.extend().unwrap();
-        // We are now at the MAX_CONTEXT_DEPTH and should fail.
-        let result_2 = result.extend();
-        assert!(matches!(
-            result_2,
-            Err(VmExecutionError::Runtime(
-                RuntimeError::MaxContextDepthReached,
-                _
-            ))
-        ));
-    }
-
-    #[apply(test_clarity_versions)]
-    fn vm_initialize_contract_already_exists(
-        #[case] version: ClarityVersion,
-        #[case] epoch: StacksEpochId,
-    ) {
-        // --- Setup VM ---
-        let mut marf = MemoryBackingStore::new();
-        let mut global_context = GlobalContext::new(
-            false,
-            CHAIN_ID_TESTNET,
-            marf.as_clarity_db(),
-            LimitedCostTracker::new_free(),
-            StacksEpochId::Epoch21, // any modern epoch
-        );
-
-        let mut call_stack = CallStack::new();
-
-        let contract_context =
-            ContractContext::new(QualifiedContractIdentifier::transient(), version);
-
-        let mut env = Environment::new(
-            &mut global_context,
-            &contract_context,
-            &mut call_stack,
-            None,
-            None,
-            None,
-        );
-
-        let contract_id = QualifiedContractIdentifier::local("dup").unwrap();
-
-        let contract_src = "(define-public (ping) (ok u1))";
-
-        let ast = ast::build_ast(&contract_id, contract_src, &mut env, version, epoch).unwrap();
-
-        // First initialization succeeds
-        env.initialize_contract_from_ast(contract_id.clone(), version, &ast, contract_src)
-            .unwrap();
-
-        // Second initialization hits ContractAlreadyExists
-        let err = env
-            .initialize_contract_from_ast(contract_id.clone(), version, &ast, contract_src)
-            .unwrap_err();
-
-        assert!(matches!(
-            err,
-            VmExecutionError::Unchecked(CheckErrorKind::ContractAlreadyExists(_))
-        ));
     }
 }
