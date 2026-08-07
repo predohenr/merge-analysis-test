@@ -33,6 +33,6 @@ mod index;
 #[cfg(test)]
 mod tests;
 
-pub use burnchain::{copy_burnchain_db, BurnchainDbCopyStats};
 pub use clarity::{copy_clarity_side_tables, ClaritySideTableStats};
+pub use burnchain::{copy_burnchain_db, BurnchainDbCopyStats};
 pub use index::{copy_index_side_tables, IndexSideTableStats};
