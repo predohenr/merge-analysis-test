@@ -14,6 +14,8 @@
 #![no_main]
 #![deny(missing_docs)]
 
+use core::ptr::addr_of;
+
 use capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm;
 use capsules_core::virtualizers::virtual_spi::VirtualSpiMasterDevice;
 use kernel::component::Component;

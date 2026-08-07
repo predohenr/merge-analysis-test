@@ -11,6 +11,8 @@
 #![no_main]
 #![deny(missing_docs)]
 
+use core::ptr::addr_of;
+
 use kernel::component::Component;
 use kernel::debug::PanicResources;
 use kernel::hil::led::LedLow;

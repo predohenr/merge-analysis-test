@@ -69,6 +69,10 @@
 #![no_main]
 #![deny(missing_docs)]
 
+use capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm;
+
+use core::ptr::addr_of;
+
 use kernel::component::Component;
 use kernel::debug::PanicResources;
 use kernel::hil::led::LedLow;
