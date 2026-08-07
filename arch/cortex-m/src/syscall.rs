@@ -407,6 +407,48 @@ impl<A: CortexMVariant> kernel::syscall::UserspaceKernelBoundary for SysCall<A> 
         Ok(())
     }
 
+    /// When the process calls `svc` to enter the kernel, the hardware
+    /// automatically pushes an SVC frame that will be unstacked when the kernel
+    /// returns to the process. In the special case of process startup,
+    /// `initialize_new_process` sets up an empty SVC frame as if an `svc` had
+    /// been called.
+    ///
+    /// Here, we modify this stack frame such that the process resumes at the
+    /// beginning of the callback function that we want the process to run. We
+    /// place the originally intended return address in the link register so
+    /// that when the function completes execution continues.
+    ///
+    /// In effect, this converts `svc` into `bl callback`.
+    unsafe fn set_process_function(
+        &self,
+        accessible_memory_start: *const u8,
+        app_brk: *const u8,
+        state: &mut CortexMStoredState,
+        callback: kernel::process::FunctionCall,
+    ) -> Result<(), ()> {
+        // Ensure that [`state.psp`, `state.psp + SVC_FRAME_SIZE`] is within
+        // process-accessible memory. Alignment is guaranteed by hardware.
+        if state.psp < accessible_memory_start as usize
+            || state.psp.saturating_add(SVC_FRAME_SIZE) > app_brk as usize
+        {
+            return Err(());
+        }
+
+        // Notes:
+        //  - Instruction addresses require `|1` to indicate thumb code
+        //  - Stack offset 4 is R12, which the syscall interface ignores
+        let stack_bottom = state.psp as *mut usize;
+        ptr::write(stack_bottom.add(7), state.psr); //......... -> APSR
+        ptr::write(stack_bottom.add(6), callback.pc.addr() | 1); //... -> PC
+        ptr::write(stack_bottom.add(5), state.yield_pc | 1); // -> LR
+        ptr::write(stack_bottom.add(3), callback.argument3.as_usize()); // -> R3
+        ptr::write(stack_bottom.add(2), callback.argument2); // -> R2
+        ptr::write(stack_bottom.add(1), callback.argument1); // -> R1
+        ptr::write(stack_bottom.add(0), callback.argument0); // -> R0
+
+        Ok(())
+    }
+
     unsafe fn switch_to_process(
         &self,
         accessible_memory_start: *const u8,
