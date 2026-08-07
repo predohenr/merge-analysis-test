@@ -84,6 +84,12 @@ pub fn get_global_app_hard_fault() -> usize {
     app_fault
 }
 
+/// Dummy
+#[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
+pub fn get_global_app_hard_fault() -> usize {
+    0
+}
+
 /// Get the `SYSCALL_FIRED` flag.
 ///
 /// This indicates that the app called a syscall.
@@ -114,6 +120,12 @@ pub fn get_global_syscall_fired() -> usize {
         )
     }
     syscall_fired
+}
+
+/// Dummy
+#[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
+pub fn get_global_syscall_fired() -> usize {
+    0
 }
 
 /// Get the stored System Control Block register values.
@@ -168,18 +180,6 @@ pub fn get_global_scb_registers() -> (u32, u32, u32, u32, u32) {
     }
 
     (_ccr, cfsr, hfsr, mmfar, bfar)
-}
-
-/// Dummy
-#[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
-pub fn get_global_app_hard_fault() -> usize {
-    0
-}
-
-/// Dummy
-#[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
-pub fn get_global_syscall_fired() -> usize {
-    0
 }
 
 /// Dummy
