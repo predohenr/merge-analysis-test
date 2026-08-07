@@ -2640,6 +2640,20 @@ impl NodeConfig {
         .with_compression(self.marf_compress)
     }
 
+    pub fn get_marf_opts(&self) -> MARFOpenOpts {
+        let hash_mode = if self.marf_defer_hashing {
+            TrieHashCalculationMode::Deferred
+        } else {
+            TrieHashCalculationMode::Immediate
+        };
+
+        MARFOpenOpts::new(
+            hash_mode,
+            self.marf_cache_strategy.as_deref().unwrap_or("noop"),
+            false,
+        )
+    }
+
     pub fn effective_event_dispatcher_queue_size(&self) -> usize {
         if self.event_dispatcher_blocking {
             0
