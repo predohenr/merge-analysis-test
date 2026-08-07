@@ -1799,6 +1799,31 @@ declare_clippy_lint! {
 
 declare_clippy_lint! {
     /// ### What it does
+    /// Checks for `.truncate(0)` calls on standard library types where it can be replaced with `.clear()`.
+    ///
+    /// Currently this includes `Vec`, `VecDeque`, `String`, and `OsString`.
+    ///
+    /// ### Why is this bad?
+    /// `clear()` expresses the intent better and is likely to be more efficient than `truncate(0)`.
+    ///
+    /// ### Example
+    /// ```no_run
+    /// let mut v = vec![1, 2, 3];
+    /// v.truncate(0);
+    /// ```
+    /// Use instead:
+    /// ```no_run
+    /// let mut v = vec![1, 2, 3];
+    /// v.clear();
+    /// ```
+    #[clippy::version = "1.97.0"]
+    pub MANUAL_CLEAR,
+    perf,
+    "using `truncate(0)` instead of `clear()`"
+}
+
+declare_clippy_lint! {
+    /// ### What it does
     /// Checks for usage of `iter().any()` on slices when it can be replaced with `contains()` and suggests doing so.
     ///
     /// ### Why is this bad?
