@@ -1193,6 +1193,79 @@ impl EventDispatcher {
             .initiate_send(id, event_observer.disable_retries, None)
     }
 
+    fn make_http_request(
+        data: &EventRequestData,
+        disable_retries: bool,
+    ) -> Result<(), EventDispatcherError> {
+        debug!(
+            "Event dispatcher: Sending payload"; "url" => &data.url, "bytes" => data.payload_bytes.len()
+        );
+
+        let url = Url::parse(&data.url)
+            .unwrap_or_else(|_| panic!("Event dispatcher: unable to parse {} as a URL", data.url));
+
+        let host = url.host_str().expect("Invalid URL: missing host");
+        let port = url.port_or_known_default().unwrap_or(80);
+        let peerhost: PeerHost = format!("{host}:{port}")
+            .parse()
+            .unwrap_or(PeerHost::DNS(host.to_string(), port));
+
+        let mut backoff = Duration::from_millis(100);
+        let mut attempts: i32 = 0;
+        // Cap the backoff at 3x the timeout
+        let max_backoff = data.timeout.saturating_mul(3);
+
+        loop {
+            let mut request = StacksHttpRequest::new_for_peer(
+                peerhost.clone(),
+                "POST".into(),
+                url.path().into(),
+                HttpRequestContents::new().payload_json_bytes(Arc::clone(&data.payload_bytes)),
+            )
+            .unwrap_or_else(|_| panic!("FATAL: failed to encode infallible data as HTTP request"));
+            request.add_header("Connection".into(), "close".into());
+            match send_http_request(host, port, request, data.timeout) {
+                Ok(response) => {
+                    if response.preamble().status_code == 200 {
+                        debug!(
+                            "Event dispatcher: Successful POST"; "url" => %url
+                        );
+                        break;
+                    } else {
+                        error!(
+                            "Event dispatcher: Failed POST"; "url" => %url, "response" => ?response.preamble()
+                        );
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                        "Event dispatcher: connection or request failed to {host}:{port} - {err:?}";
+                        "backoff" => ?backoff,
+                        "attempts" => attempts
+                    );
+                    if disable_retries {
+                        warn!(
+                            "Observer is configured in disable_retries mode: skipping retry of payload"
+                        );
+                        return Err(err.into());
+                    }
+                    #[cfg(test)]
+                    if TEST_EVENT_OBSERVER_SKIP_RETRY.get() {
+                        warn!("Fault injection: skipping retry of payload");
+                        return Err(err.into());
+                    }
+                }
+            }
+
+            sleep(backoff);
+            let jitter: u64 = rand::thread_rng().gen_range(0..100);
+            backoff = std::cmp::min(
+                backoff.saturating_mul(2) + Duration::from_millis(jitter),
+                max_backoff,
+            );
+            attempts = attempts.saturating_add(1);
+        }
+    }
     /// This fire-and-forget version of `dispatch_to_observer` logs any error from enqueueing the
     /// request, and does not give you a way to wait for blocking until it's sent. If you need
     /// more control, use `dispatch_to_observer()` directly and handle the result yourself.
