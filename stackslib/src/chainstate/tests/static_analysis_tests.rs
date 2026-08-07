@@ -418,25 +418,6 @@ fn static_check_error_expected_sequence() {
     );
 }
 
-/// CheckErrorKind: [`CheckErrorKind::CouldNotDetermineSerializationType`]
-/// Caused by: `to-consensus-buff?` over a list of trait references lacks a serialization type.
-/// Outcome: block accepted.
-/// Note: during analysis, this error can only be triggered by `from-consensus-buff?`
-///       which is only available in Clarity 2 and later. So Clarity 1 will not trigger
-///       this error.
-#[test]
-fn static_check_error_could_not_determine_serialization_type() {
-    contract_deploy_consensus_test!(
-        contract_name: "serialization-type",
-        contract_code: "
-        (define-trait trait-a ((ping () (response bool bool))))
-        (define-trait trait-b ((pong () (response bool bool))))
-        (define-public (trigger (first <trait-a>) (second <trait-b>))
-            (ok (to-consensus-buff? (list first second))))",
-        exclude_clarity_versions: &[ClarityVersion::Clarity1],
-    );
-}
-
 /// StaticCheckErrorKind: [`StaticCheckErrorKind::IllegalOrUnknownFunctionApplication`]
 /// Caused by: calling `map` with `if` (a non-function) as its function argument.
 /// Outcome: block accepted.
@@ -448,14 +429,36 @@ fn static_check_error_illegal_or_unknown_function_application() {
     );
 }
 
-/// StaticCheckErrorKind: [`StaticCheckErrorKind::UnknownFunction`]
-/// Caused by: invoking the undefined function `ynot`.
+/// StaticCheckErrorKind: [`StaticCheckErrorKind::DefineTraitDuplicateMethod`]
+/// Caused by: trait definition contains duplicate method names
+/// Outcome: block accepted.
+/// Note: This error was added in Clarity 2. Clarity 1 will accept the contract.
+#[test]
+fn static_check_error_define_trait_duplicate_method() {
+    contract_deploy_consensus_test!(
+        contract_name: "def-trait-dup-method",
+        contract_code: "
+        (define-trait double-method (
+            (foo (uint) (response uint uint))
+            (foo (bool) (response bool bool))
+        ))",
+    );
+}
+
+/// StaticCheckErrorKind: [`StaticCheckErrorKind::TooManyFunctionParameters`]
+/// Caused by: a function has too many parameters.
 /// Outcome: block accepted.
 #[test]
-fn static_check_error_unknown_function() {
+fn static_check_error_too_many_function_parameters() {
     contract_deploy_consensus_test!(
-        contract_name: "unknown-function",
-        contract_code: "(ynot 1 2)",
+        contract_name: "too-many-params",
+        contract_code: &format!(
+            "(define-trait trait-1 ((method ({}) (response uint uint))))",
+            (0..(MAX_FUNCTION_PARAMETERS + 1))
+                .map(|i| "uint".to_string())
+                .collect::<Vec<String>>()
+                .join(" ")
+        ),
     );
 }
 
@@ -492,52 +495,16 @@ fn static_check_error_bad_syntax_binding() {
     );
 }
 
-/// StaticCheckErrorKind: [`StaticCheckErrorKind::ExpectedOptionalOrResponseType`]
-/// Caused by: expected an optional or response type, but got a value
+/// StaticCheckErrorKind: [`StaticCheckErrorKind::ReservedWord`]
+/// Caused by: name is a reserved word
 /// Outcome: block accepted.
+/// Note: This error was added in Clarity 3. Clarity 1 and 2
+///       will trigger a [`CheckErrorKind::NameAlreadyUsed`].
 #[test]
-fn static_check_error_expected_optional_or_response_type() {
+fn static_check_error_reserved_word() {
     contract_deploy_consensus_test!(
-        contract_name: "exp-opt-or-res",
-        contract_code: "(try! 3)",
-    );
-}
-
-/// StaticCheckErrorKind: [`StaticCheckErrorKind::DefineTraitBadSignature`]
-/// Caused by: calling `define-trait` with a method signature that is not valid.
-/// Outcome: block accepted.
-#[test]
-fn static_check_error_define_trait_bad_signature() {
-    contract_deploy_consensus_test!(
-        contract_name: "def-trait-bad-sign",
-        contract_code: "(define-trait trait-1 ((get-1 uint uint)))",
-    );
-}
-
-/// StaticCheckErrorKind: [`StaticCheckErrorKind::DefineTraitDuplicateMethod`]
-/// Caused by: trait definition contains duplicate method names
-/// Outcome: block accepted.
-/// Note: This error was added in Clarity 2. Clarity 1 will accept the contract.
-#[test]
-fn static_check_error_define_trait_duplicate_method() {
-    contract_deploy_consensus_test!(
-        contract_name: "def-trait-dup-method",
-        contract_code: "
-        (define-trait double-method (
-            (foo (uint) (response uint uint))
-            (foo (bool) (response bool bool))
-        ))",
-    );
-}
-
-/// StaticCheckErrorKind: [`StaticCheckErrorKind::UnexpectedTraitOrFieldReference`]
-/// Caused by: unexpected use of trait reference or field
-/// Outcome: block accepted.
-#[test]
-fn static_check_error_unexpected_trait_or_field_reference() {
-    contract_deploy_consensus_test!(
-        contract_name: "trait-or-field-ref",
-        contract_code: "(+ 1 'SZ2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKQ9H6DPR.contract.field)",
+        contract_name: "reserved-word",
+        contract_code: "(define-private (block-height) true)",
     );
 }
 
@@ -563,53 +530,6 @@ fn static_check_error_incompatible_trait() {
     );
 }
 
-/// StaticCheckErrorKind: [`StaticCheckErrorKind::TraitTooManyMethods`]
-/// Caused by: a trait has too many methods.
-/// Outcome: block accepted.
-#[test]
-fn static_check_error_trait_too_many_methods() {
-    contract_deploy_consensus_test!(
-        contract_name: "too-many-methods",
-        contract_code: &format!(
-            "(define-trait trait-1 ({}))",
-            (0..(MAX_TRAIT_METHODS + 1))
-                .map(|i| format!("(method-{i} (uint) (response uint uint))"))
-                .collect::<Vec<String>>()
-                .join(" ")
-        ),
-    );
-}
-
-/// StaticCheckErrorKind: [`StaticCheckErrorKind::TooManyFunctionParameters`]
-/// Caused by: a function has too many parameters.
-/// Outcome: block accepted.
-#[test]
-fn static_check_error_too_many_function_parameters() {
-    contract_deploy_consensus_test!(
-        contract_name: "too-many-params",
-        contract_code: &format!(
-            "(define-trait trait-1 ((method ({}) (response uint uint))))",
-            (0..(MAX_FUNCTION_PARAMETERS + 1))
-                .map(|i| "uint".to_string())
-                .collect::<Vec<String>>()
-                .join(" ")
-        ),
-    );
-}
-
-/// StaticCheckErrorKind: [`StaticCheckErrorKind::ReservedWord`]
-/// Caused by: name is a reserved word
-/// Outcome: block accepted.
-/// Note: This error was added in Clarity 3. Clarity 1 and 2
-///       will trigger a [`CheckErrorKind::NameAlreadyUsed`].
-#[test]
-fn static_check_error_reserved_word() {
-    contract_deploy_consensus_test!(
-        contract_name: "reserved-word",
-        contract_code: "(define-private (block-height) true)",
-    );
-}
-
 /// StaticCheckErrorKind: [`StaticCheckErrorKind::NoSuchBlockInfoProperty`]
 /// Caused by: referenced an unknown property of a burn block
 /// Outcome: block accepted.
@@ -631,6 +551,86 @@ fn static_check_error_no_such_stacks_block_info_property() {
     contract_deploy_consensus_test!(
         contract_name: "no-such-stacks-info",
         contract_code: "(get-stacks-block-info? none u1)",
+    );
+}
+
+/// StaticCheckErrorKind: [`StaticCheckErrorKind::UnexpectedTraitOrFieldReference`]
+/// Caused by: unexpected use of trait reference or field
+/// Outcome: block accepted.
+#[test]
+fn static_check_error_unexpected_trait_or_field_reference() {
+    contract_deploy_consensus_test!(
+        contract_name: "trait-or-field-ref",
+        contract_code: "(+ 1 'SZ2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKQ9H6DPR.contract.field)",
+    );
+}
+
+/// StaticCheckErrorKind: [`StaticCheckErrorKind::DefineTraitBadSignature`]
+/// Caused by: calling `define-trait` with a method signature that is not valid.
+/// Outcome: block accepted.
+#[test]
+fn static_check_error_define_trait_bad_signature() {
+    contract_deploy_consensus_test!(
+        contract_name: "def-trait-bad-sign",
+        contract_code: "(define-trait trait-1 ((get-1 uint uint)))",
+    );
+}
+
+/// StaticCheckErrorKind: [`StaticCheckErrorKind::UnknownFunction`]
+/// Caused by: invoking the undefined function `ynot`.
+/// Outcome: block accepted.
+#[test]
+fn static_check_error_unknown_function() {
+    contract_deploy_consensus_test!(
+        contract_name: "unknown-function",
+        contract_code: "(ynot 1 2)",
+    );
+}
+
+/// StaticCheckErrorKind: [`StaticCheckErrorKind::ExpectedOptionalOrResponseType`]
+/// Caused by: expected an optional or response type, but got a value
+/// Outcome: block accepted.
+#[test]
+fn static_check_error_expected_optional_or_response_type() {
+    contract_deploy_consensus_test!(
+        contract_name: "exp-opt-or-res",
+        contract_code: "(try! 3)",
+    );
+}
+
+/// StaticCheckErrorKind: [`StaticCheckErrorKind::TraitTooManyMethods`]
+/// Caused by: a trait has too many methods.
+/// Outcome: block accepted.
+#[test]
+fn static_check_error_trait_too_many_methods() {
+    contract_deploy_consensus_test!(
+        contract_name: "too-many-methods",
+        contract_code: &format!(
+            "(define-trait trait-1 ({}))",
+            (0..(MAX_TRAIT_METHODS + 1))
+                .map(|i| format!("(method-{i} (uint) (response uint uint))"))
+                .collect::<Vec<String>>()
+                .join(" ")
+        ),
+    );
+}
+
+/// CheckErrorKind: [`CheckErrorKind::CouldNotDetermineSerializationType`]
+/// Caused by: `to-consensus-buff?` over a list of trait references lacks a serialization type.
+/// Outcome: block accepted.
+/// Note: during analysis, this error can only be triggered by `from-consensus-buff?`
+///       which is only available in Clarity 2 and later. So Clarity 1 will not trigger
+///       this error.
+#[test]
+fn static_check_error_could_not_determine_serialization_type() {
+    contract_deploy_consensus_test!(
+        contract_name: "serialization-type",
+        contract_code: "
+        (define-trait trait-a ((ping () (response bool bool))))
+        (define-trait trait-b ((pong () (response bool bool))))
+        (define-public (trigger (first <trait-a>) (second <trait-b>))
+            (ok (to-consensus-buff? (list first second))))",
+        exclude_clarity_versions: &[ClarityVersion::Clarity1],
     );
 }
 
