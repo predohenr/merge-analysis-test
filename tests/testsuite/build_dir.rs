@@ -16,677 +16,6 @@ use cargo_test_support::{paths, prelude::*, project, str};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 
 #[cargo_test]
-fn binary_with_debug() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    assert_not_exists(&p.root().join("target"));
-
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-
-"#]]);
-
-    p.root()
-        .join("target-dir")
-        .assert_build_dir_layout(str![[r#"
-[ROOT]/foo/target-dir/CACHEDIR.TAG
-[ROOT]/foo/target-dir/debug/.cargo-lock
-[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
-[ROOT]/foo/target-dir/debug/foo[EXE]
-[ROOT]/foo/target-dir/debug/foo.d
-
-"#]]);
-}
-
-#[cargo_test]
-fn binary_with_release() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build --release")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    assert_exists_patterns_with_base_dir(
-        &p.root(),
-        &[
-            // Check the pre-uplifted binary in the build-dir
-            &format!("build-dir/release/build/foo/*/out/foo*{EXE_SUFFIX}"),
-            "build-dir/release/build/foo/*/out/foo*.d",
-            // Verify the binary was copied to the target-dir
-            &format!("target-dir/release/foo{EXE_SUFFIX}"),
-            "target-dir/release/foo.d",
-        ],
-    );
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/release/.cargo-build-lock
-[ROOT]/foo/build-dir/release/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/release/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/release/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/release/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/release/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/release/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/release/build/foo/[HASH]/.lock
-
-"#]]);
-
-    p.root()
-        .join("target-dir")
-        .assert_build_dir_layout(str![[r#"
-[ROOT]/foo/target-dir/CACHEDIR.TAG
-[ROOT]/foo/target-dir/release/.cargo-lock
-[ROOT]/foo/target-dir/release/.cargo-artifact-lock
-[ROOT]/foo/target-dir/release/foo[EXE]
-[ROOT]/foo/target-dir/release/foo.d
-
-"#]]);
-}
-
-#[cargo_test]
-fn libs() {
-    // https://doc.rust-lang.org/reference/linkage.html#r-link.staticlib
-    let (staticlib_prefix, staticlib_suffix) =
-        if cfg!(target_os = "windows") && cfg!(target_env = "msvc") {
-            ("", ".lib")
-        } else {
-            ("lib", ".a")
-        };
-
-    // (crate-type, list of final artifacts)
-    let lib_types = [
-        ("lib", ["libfoo.rlib", "libfoo.d"]),
-        (
-            "dylib",
-            [
-                &format!("{DLL_PREFIX}foo{DLL_SUFFIX}"),
-                &format!("{DLL_PREFIX}foo.d"),
-            ],
-        ),
-        (
-            "cdylib",
-            [
-                &format!("{DLL_PREFIX}foo{DLL_SUFFIX}"),
-                &format!("{DLL_PREFIX}foo.d"),
-            ],
-        ),
-        (
-            "staticlib",
-            [
-                &format!("{staticlib_prefix}foo{staticlib_suffix}"),
-                &format!("{staticlib_prefix}foo.d"),
-            ],
-        ),
-    ];
-
-    for (lib_type, expected_files) in lib_types {
-        let p = project()
-            .file("src/lib.rs", r#"fn foo() { println!("Hello, World!") }"#)
-            .file(
-                "Cargo.toml",
-                &format!(
-                    r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-            edition = "2015"
-
-            [lib]
-            crate-type = ["{lib_type}"]
-            "#
-                ),
-            )
-            .file(
-                ".cargo/config.toml",
-                r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-            )
-            .build();
-
-        p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
-            .masquerade_as_nightly_cargo(&["new build-dir layout"])
-            .enable_mac_dsym()
-            .run();
-
-        // Verify lib artifacts were copied into the artifact dir
-        assert_exists_patterns_with_base_dir(&p.root().join("target-dir/debug"), &expected_files);
-    }
-}
-
-#[cargo_test]
-fn should_default_to_target() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    p.root().join("target").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/target/.rustc_info.json
-[ROOT]/foo/target/CACHEDIR.TAG
-[ROOT]/foo/target/debug/.cargo-lock
-[ROOT]/foo/target/debug/.cargo-artifact-lock
-[ROOT]/foo/target/debug/.cargo-build-lock
-[ROOT]/foo/target/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/target/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/target/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/target/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/target/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/target/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/target/debug/foo[EXE]
-[ROOT]/foo/target/debug/foo.d
-[ROOT]/foo/target/debug/build/foo/[HASH]/.lock
-
-"#]]);
-}
-
-#[cargo_test]
-fn should_respect_env_var() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .env("CARGO_BUILD_BUILD_DIR", "build-dir")
-        .enable_mac_dsym()
-        .run();
-
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-
-"#]]);
-}
-
-#[cargo_test]
-fn build_script_should_output_to_build_dir() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file(
-            "build.rs",
-            r#"
-            fn main() {
-                std::fs::write(
-                    format!("{}/foo.txt", std::env::var("OUT_DIR").unwrap()),
-                    "Hello, world!",
-                )
-                .unwrap();
-            }
-            "#,
-        )
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo.txt
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/build_script_build.d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/build_script_build[EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/run-build-script-build-script-build
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/run-build-script-build-script-build.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-build-script-build-script-build
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/build-script-build-script-build
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/build-script-build-script-build.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/stdout
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/root-output
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/stderr
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-
-"#]]);
-}
-
-#[cargo_test]
-fn cargo_tmpdir_should_output_to_build_dir() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file(
-            "tests/foo.rs",
-            r#"
-            #[test]
-            fn test() {
-                std::fs::write(
-                    format!("{}/foo.txt", env!("CARGO_TARGET_TMPDIR")),
-                    "Hello, world!",
-                )
-                .unwrap();
-            }
-            "#,
-        )
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking test")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo-[HASH].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo.d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo-[HASH][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-test-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-test-integration-test-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-integration-test-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-integration-test-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-[ROOT]/foo/build-dir/tmp/foo.txt
-[ROOT]/foo/build-dir/.rustc_info.json
-
-"#]]);
-
-    p.root()
-        .join("target-dir")
-        .assert_build_dir_layout(str![[r#"
-[ROOT]/foo/target-dir/CACHEDIR.TAG
-[ROOT]/foo/target-dir/debug/.cargo-lock
-[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
-[ROOT]/foo/target-dir/debug/foo[EXE]
-
-"#]]);
-}
-
-#[cargo_test]
-fn examples_should_output_to_build_dir_and_uplift_to_target_dir() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file("examples/foo.rs", r#"fn main() { }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build --examples")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-example-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/example-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/example-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-
-"#]]);
-
-    assert!(!p.root().join("build-dir/debug/examples").exists());
-
-    p.root()
-        .join("target-dir")
-        .assert_build_dir_layout(str![[r#"
-[ROOT]/foo/target-dir/CACHEDIR.TAG
-[ROOT]/foo/target-dir/debug/.cargo-lock
-[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
-[ROOT]/foo/target-dir/debug/examples/foo[EXE]
-[ROOT]/foo/target-dir/debug/examples/foo.d
-
-"#]]);
-}
-
-#[cargo_test]
-fn benches_should_output_to_build_dir() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file("benches/foo.rs", r#"fn main() { }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build --bench=foo")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo-[HASH].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo-[HASH][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-test-bench-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-bench-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-bench-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-[ROOT]/foo/build-dir/.rustc_info.json
-
-"#]]);
-
-    p.root()
-        .join("target-dir")
-        .assert_build_dir_layout(str![[r#"
-[ROOT]/foo/target-dir/CACHEDIR.TAG
-[ROOT]/foo/target-dir/debug/.cargo-lock
-[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
-[ROOT]/foo/target-dir/debug/foo[EXE]
-
-"#]]);
-}
-
-#[cargo_test]
-fn cargo_doc_should_output_to_target_dir() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking doc")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    let docs_dir = p.root().join("target-dir/doc");
-
-    assert_exists(&docs_dir);
-    assert_exists(&docs_dir.join("foo/index.html"));
-}
-
-#[cargo_test(nightly, reason = "--output-format is unstable")]
-fn cargo_rustdoc_json_should_output_to_target_dir() {
-    let p = project()
-        .file("src/lib.rs", "")
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout rustdoc -Zunstable-options --output-format json")
-        .masquerade_as_nightly_cargo(&["new build-dir layout", "rustdoc-output-format"])
-        .enable_mac_dsym()
-        .run();
-
-    let docs_dir = p.root().join("target-dir/doc");
-
-    assert_exists(&docs_dir);
-    assert_exists(&docs_dir.join("foo.json"));
-
-    p.root().join("build-dir").assert_build_dir_layout(str![
-        r#"
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/.rustdoc_fingerprint.json
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/.fingerprint/foo-[HASH]/doc-lib-foo
-[ROOT]/foo/build-dir/debug/.fingerprint/foo-[HASH]/doc-lib-foo.json
-[ROOT]/foo/build-dir/debug/.fingerprint/foo-[HASH]/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo-[HASH]/out/foo.json
-
-"#
-    ]);
-}
-
-#[cargo_test]
-fn cargo_package_should_build_in_build_dir_and_output_to_target_dir() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking package")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    let package_artifact_dir = p.root().join("target-dir/package");
-    assert_exists(&package_artifact_dir);
-    assert_exists(&package_artifact_dir.join("foo-0.0.1.crate"));
-    assert!(package_artifact_dir.join("foo-0.0.1.crate").is_file());
-    // FIXME: The `.cargo-lock` file should be in target-dir not build-dir. See #16707
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/debug/.cargo-lock
-[ROOT]/foo/build-dir/debug/.cargo-artifact-lock
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-[ROOT]/foo/build-dir/debug/foo[EXE]
-[ROOT]/foo/build-dir/debug/foo.d
-[ROOT]/foo/build-dir/package/foo-0.0.1/Cargo.lock
-[ROOT]/foo/build-dir/package/foo-0.0.1/Cargo.toml
-[ROOT]/foo/build-dir/package/foo-0.0.1/Cargo.toml.orig
-[ROOT]/foo/build-dir/package/foo-0.0.1/src/main.rs
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/package/tmp-crate/foo-0.0.1.crate
-
-"#]]);
-
-    p.root()
-        .join("target-dir")
-        .assert_build_dir_layout(str![[r#"
-[ROOT]/foo/target-dir/package/foo-0.0.1.crate
-[ROOT]/foo/target-dir/CACHEDIR.TAG
-
-"#]]);
-}
-
-#[cargo_test]
-fn cargo_publish_should_only_touch_build_dir() {
-    let registry = RegistryBuilder::new().http_api().http_index().build();
-
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking publish")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .replace_crates_io(registry.index_url())
-        .enable_mac_dsym()
-        .run();
-
-    let package_artifact_dir = p.root().join("target-dir/package");
-    assert!(!package_artifact_dir.exists());
-
-    let package_build_dir = p.root().join("build-dir/package");
-    assert_exists(&package_build_dir);
-    assert_exists(&package_build_dir.join("foo-0.0.1"));
-    assert!(package_build_dir.join("foo-0.0.1").is_dir());
-}
-
-#[cargo_test]
-fn cargo_clean_should_clean_the_target_dir_and_build_dir() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
-
-"#]]);
-
-    p.root()
-        .join("target-dir")
-        .assert_build_dir_layout(str![[r#"
-[ROOT]/foo/target-dir/CACHEDIR.TAG
-[ROOT]/foo/target-dir/debug/.cargo-lock
-[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
-[ROOT]/foo/target-dir/debug/foo[EXE]
-[ROOT]/foo/target-dir/debug/foo.d
-
-"#]]);
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking clean")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .enable_mac_dsym()
-        .run();
-
-    assert_not_exists(&p.root().join("build-dir"));
-    assert_not_exists(&p.root().join("target-dir"));
-}
-
-#[cargo_test]
 fn cargo_clean_should_remove_correct_files() {
     Package::new("bar", "0.1.0").publish();
 
@@ -766,7 +95,36 @@ fn cargo_clean_should_remove_correct_files() {
 }
 
 #[cargo_test]
-fn timings_report_should_output_to_target_dir() {
+fn should_respect_env_var() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .env("CARGO_BUILD_BUILD_DIR", "build-dir")
+        .enable_mac_dsym()
+        .run();
+
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+
+"#]]);
+}
+
+#[cargo_test]
+fn cargo_publish_should_only_touch_build_dir() {
+    let registry = RegistryBuilder::new().http_api().http_index().build();
+
     let p = project()
         .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
         .file(
@@ -779,12 +137,172 @@ fn timings_report_should_output_to_target_dir() {
         )
         .build();
 
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build --timings")
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking publish")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .replace_crates_io(registry.index_url())
+        .enable_mac_dsym()
+        .run();
+
+    let package_artifact_dir = p.root().join("target-dir/package");
+    assert!(!package_artifact_dir.exists());
+
+    let package_build_dir = p.root().join("build-dir/package");
+    assert_exists(&package_build_dir);
+    assert_exists(&package_build_dir.join("foo-0.0.1"));
+    assert!(package_build_dir.join("foo-0.0.1").is_dir());
+}
+
+#[cargo_test]
+fn template_should_suggest_nearest_variable() {
+    let p = project()
+        .file("src/lib.rs", "")
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            build-dir = "{workspace-ro}/build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .with_status(101)
+        .with_stderr_data(str![[r#"
+[ERROR] unexpected variable `workspace-ro` in build.build-dir path `{workspace-ro}/build-dir`
+
+[HELP] a template variable with a similar name exists: `workspace-root`
+
+"#]])
+        .run();
+}
+
+#[cargo_test]
+fn template_should_handle_reject_unmatched_brackets() {
+    let p = project()
+        .file("src/lib.rs", "")
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            build-dir = "foo/{bar"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .with_status(101)
+        .with_stderr_data(str![[r#"
+[ERROR] unexpected opening bracket `{` in build.build-dir path `foo/{bar`
+
+"#]])
+        .run();
+
+    let p = project()
+        .file("src/lib.rs", "")
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            build-dir = "foo/}bar"
+            "#,
+        )
+        .build();
+
+    p.cargo("build")
+        .with_status(101)
+        .with_stderr_data(str![[r#"
+[ERROR] unexpected closing bracket `}` in build.build-dir path `foo/}bar`
+
+"#]])
+        .run();
+}
+
+#[cargo_test]
+fn cargo_doc_should_output_to_target_dir() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking doc")
         .masquerade_as_nightly_cargo(&["new build-dir layout"])
         .enable_mac_dsym()
         .run();
 
-    assert_exists(&p.root().join("target-dir/cargo-timings/cargo-timing.html"));
+    let docs_dir = p.root().join("target-dir/doc");
+
+    assert_exists(&docs_dir);
+    assert_exists(&docs_dir.join("foo/index.html"));
+}
+
+#[cargo_test]
+fn build_script_should_output_to_build_dir() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file(
+            "build.rs",
+            r#"
+            fn main() {
+                std::fs::write(
+                    format!("{}/foo.txt", std::env::var("OUT_DIR").unwrap()),
+                    "Hello, world!",
+                )
+                .unwrap();
+            }
+            "#,
+        )
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo.txt
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/build_script_build.d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/build_script_build[EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/run-build-script-build-script-build
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/run-build-script-build-script-build.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-build-script-build-script-build
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/build-script-build-script-build
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/build-script-build-script-build.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/stdout
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/root-output
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/stderr
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+
+"#]]);
 }
 
 #[cargo_test(
@@ -841,28 +359,276 @@ fn template_should_error_for_invalid_variables() {
 }
 
 #[cargo_test]
-fn template_should_suggest_nearest_variable() {
+fn libs() {
+    // https://doc.rust-lang.org/reference/linkage.html#r-link.staticlib
+    let (staticlib_prefix, staticlib_suffix) =
+        if cfg!(target_os = "windows") && cfg!(target_env = "msvc") {
+            ("", ".lib")
+        } else {
+            ("lib", ".a")
+        };
+
+    // (crate-type, list of final artifacts)
+    let lib_types = [
+        ("lib", ["libfoo.rlib", "libfoo.d"]),
+        (
+            "dylib",
+            [
+                &format!("{DLL_PREFIX}foo{DLL_SUFFIX}"),
+                &format!("{DLL_PREFIX}foo.d"),
+            ],
+        ),
+        (
+            "cdylib",
+            [
+                &format!("{DLL_PREFIX}foo{DLL_SUFFIX}"),
+                &format!("{DLL_PREFIX}foo.d"),
+            ],
+        ),
+        (
+            "staticlib",
+            [
+                &format!("{staticlib_prefix}foo{staticlib_suffix}"),
+                &format!("{staticlib_prefix}foo.d"),
+            ],
+        ),
+    ];
+
+    for (lib_type, expected_files) in lib_types {
+        let p = project()
+            .file("src/lib.rs", r#"fn foo() { println!("Hello, World!") }"#)
+            .file(
+                "Cargo.toml",
+                &format!(
+                    r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            edition = "2015"
+
+            [lib]
+            crate-type = ["{lib_type}"]
+            "#
+                ),
+            )
+            .file(
+                ".cargo/config.toml",
+                r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+            )
+            .build();
+
+        p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
+            .masquerade_as_nightly_cargo(&["new build-dir layout"])
+            .enable_mac_dsym()
+            .run();
+
+        // Verify lib artifacts were copied into the artifact dir
+        assert_exists_patterns_with_base_dir(&p.root().join("target-dir/debug"), &expected_files);
+    }
+}
+
+#[cargo_test]
+fn timings_report_should_output_to_target_dir() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build --timings")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    assert_exists(&p.root().join("target-dir/cargo-timings/cargo-timing.html"));
+}
+
+#[cargo_test(nightly, reason = "--output-format is unstable")]
+fn cargo_rustdoc_json_should_output_to_target_dir() {
     let p = project()
         .file("src/lib.rs", "")
         .file(
             ".cargo/config.toml",
             r#"
             [build]
-            build-dir = "{workspace-ro}/build-dir"
+            target-dir = "target-dir"
+            build-dir = "build-dir"
             "#,
         )
         .build();
 
+    p.cargo("-Zbuild-dir-new-layout rustdoc -Zunstable-options --output-format json")
+        .masquerade_as_nightly_cargo(&["new build-dir layout", "rustdoc-output-format"])
+        .enable_mac_dsym()
+        .run();
+
+    let docs_dir = p.root().join("target-dir/doc");
+
+    assert_exists(&docs_dir);
+    assert_exists(&docs_dir.join("foo.json"));
+
+    p.root().join("build-dir").assert_build_dir_layout(str![
+        r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/.rustdoc_fingerprint.json
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/.fingerprint/foo-[HASH]/doc-lib-foo
+[ROOT]/foo/build-dir/debug/.fingerprint/foo-[HASH]/doc-lib-foo.json
+[ROOT]/foo/build-dir/debug/.fingerprint/foo-[HASH]/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo-[HASH]/out/foo.json
+
+"#
+    ]);
+}
+
+#[cargo_test]
+fn should_default_to_target() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .build();
+
     p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
         .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .with_status(101)
-        .with_stderr_data(str![[r#"
-[ERROR] unexpected variable `workspace-ro` in build.build-dir path `{workspace-ro}/build-dir`
-
-[HELP] a template variable with a similar name exists: `workspace-root`
-
-"#]])
+        .enable_mac_dsym()
         .run();
+
+    p.root().join("target").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/target/.rustc_info.json
+[ROOT]/foo/target/CACHEDIR.TAG
+[ROOT]/foo/target/debug/.cargo-lock
+[ROOT]/foo/target/debug/.cargo-artifact-lock
+[ROOT]/foo/target/debug/.cargo-build-lock
+[ROOT]/foo/target/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/target/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/target/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/target/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/target/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/target/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/target/debug/foo[EXE]
+[ROOT]/foo/target/debug/foo.d
+[ROOT]/foo/target/debug/build/foo/[HASH]/.lock
+
+"#]]);
+}
+
+#[cargo_test]
+fn benches_should_output_to_build_dir() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file("benches/foo.rs", r#"fn main() { }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build --bench=foo")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo-[HASH].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo-[HASH][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-test-bench-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-bench-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-bench-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+[ROOT]/foo/build-dir/.rustc_info.json
+
+"#]]);
+
+    p.root()
+        .join("target-dir")
+        .assert_build_dir_layout(str![[r#"
+[ROOT]/foo/target-dir/CACHEDIR.TAG
+[ROOT]/foo/target-dir/debug/.cargo-lock
+[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
+[ROOT]/foo/target-dir/debug/foo[EXE]
+
+"#]]);
+}
+
+#[cargo_test]
+fn cargo_package_should_build_in_build_dir_and_output_to_target_dir() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking package")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    let package_artifact_dir = p.root().join("target-dir/package");
+    assert_exists(&package_artifact_dir);
+    assert_exists(&package_artifact_dir.join("foo-0.0.1.crate"));
+    assert!(package_artifact_dir.join("foo-0.0.1.crate").is_file());
+    // FIXME: The `.cargo-lock` file should be in target-dir not build-dir. See #16707
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/debug/.cargo-lock
+[ROOT]/foo/build-dir/debug/.cargo-artifact-lock
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+[ROOT]/foo/build-dir/debug/foo[EXE]
+[ROOT]/foo/build-dir/debug/foo.d
+[ROOT]/foo/build-dir/package/foo-0.0.1/Cargo.lock
+[ROOT]/foo/build-dir/package/foo-0.0.1/Cargo.toml
+[ROOT]/foo/build-dir/package/foo-0.0.1/Cargo.toml.orig
+[ROOT]/foo/build-dir/package/foo-0.0.1/src/main.rs
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/package/tmp-crate/foo-0.0.1.crate
+
+"#]]);
+
+    p.root()
+        .join("target-dir")
+        .assert_build_dir_layout(str![[r#"
+[ROOT]/foo/target-dir/package/foo-0.0.1.crate
+[ROOT]/foo/target-dir/CACHEDIR.TAG
+
+"#]]);
 }
 
 #[cargo_test]
@@ -912,6 +678,217 @@ fn template_workspace_root() {
 "#]]);
 }
 
+/// __CARGO_DEFAULT_LIB_METADATA is internal but used by rustc bootstrap and Miri
+/// Regression test for https://github.com/rust-lang/cargo/issues/16854
+#[cargo_test]
+fn should_work_with_cargo_default_lib_metadata() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file("build.rs", r#"fn main() { }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout build")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .env("__CARGO_DEFAULT_LIB_METADATA", "true")
+        .enable_mac_dsym()
+        .with_stderr_data(str![[r#"
+[COMPILING] foo v0.0.1 ([ROOT]/foo)
+[FINISHED] `dev` profile [unoptimized + debuginfo] target(s) in [ELAPSED]s
+
+"#]])
+        .run();
+
+    // NOTE: build_script_build[EXE] does not contain a hash in the filename
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/run-build-script-build-script-build
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/run-build-script-build-script-build.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/root-output
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/stderr
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/stdout
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/build-script-build-script-build
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/build-script-build-script-build.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-build-script-build-script-build
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/build_script_build[EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/build_script_build.d
+
+"#]]);
+}
+
+#[cargo_test]
+fn binary_with_debug() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    assert_not_exists(&p.root().join("target"));
+
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+
+"#]]);
+
+    p.root()
+        .join("target-dir")
+        .assert_build_dir_layout(str![[r#"
+[ROOT]/foo/target-dir/CACHEDIR.TAG
+[ROOT]/foo/target-dir/debug/.cargo-lock
+[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
+[ROOT]/foo/target-dir/debug/foo[EXE]
+[ROOT]/foo/target-dir/debug/foo.d
+
+"#]]);
+}
+
+#[cargo_test]
+fn cargo_clean_should_clean_the_target_dir_and_build_dir() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+
+"#]]);
+
+    p.root()
+        .join("target-dir")
+        .assert_build_dir_layout(str![[r#"
+[ROOT]/foo/target-dir/CACHEDIR.TAG
+[ROOT]/foo/target-dir/debug/.cargo-lock
+[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
+[ROOT]/foo/target-dir/debug/foo[EXE]
+[ROOT]/foo/target-dir/debug/foo.d
+
+"#]]);
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking clean")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    assert_not_exists(&p.root().join("build-dir"));
+    assert_not_exists(&p.root().join("target-dir"));
+}
+
+#[cargo_test]
+fn binary_with_release() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build --release")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    assert_exists_patterns_with_base_dir(
+        &p.root(),
+        &[
+            // Check the pre-uplifted binary in the build-dir
+            &format!("build-dir/release/build/foo/*/out/foo*{EXE_SUFFIX}"),
+            "build-dir/release/build/foo/*/out/foo*.d",
+            // Verify the binary was copied to the target-dir
+            &format!("target-dir/release/foo{EXE_SUFFIX}"),
+            "target-dir/release/foo.d",
+        ],
+    );
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/release/.cargo-build-lock
+[ROOT]/foo/build-dir/release/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/release/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/release/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/release/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/release/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/release/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/release/build/foo/[HASH]/.lock
+
+"#]]);
+
+    p.root()
+        .join("target-dir")
+        .assert_build_dir_layout(str![[r#"
+[ROOT]/foo/target-dir/CACHEDIR.TAG
+[ROOT]/foo/target-dir/release/.cargo-lock
+[ROOT]/foo/target-dir/release/.cargo-artifact-lock
+[ROOT]/foo/target-dir/release/foo[EXE]
+[ROOT]/foo/target-dir/release/foo.d
+
+"#]]);
+}
+
 #[cargo_test]
 fn template_cargo_cache_home() {
     let p = project()
@@ -957,6 +934,153 @@ fn template_cargo_cache_home() {
 [ROOT]/foo/target-dir/debug/.cargo-artifact-lock
 [ROOT]/foo/target-dir/debug/foo[EXE]
 [ROOT]/foo/target-dir/debug/foo.d
+
+"#]]);
+}
+
+#[cargo_test]
+fn artifact_deps() {
+    let p = project()
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .file(
+            "Cargo.toml",
+            r#"
+                [package]
+                name = "foo"
+                version = "0.0.0"
+                edition = "2015"
+                authors = []
+                resolver = "2"
+
+                [dependencies]
+                bar = { path = "bar/", artifact = ["bin:bar"] }
+            "#,
+        )
+        .file(
+            "src/main.rs",
+            r#"
+            fn main() {
+                 println!("CARGO_BIN_DIR_BAR={}", env!("CARGO_BIN_DIR_BAR"));
+                 println!("CARGO_BIN_FILE_BAR_bar={}", env!("CARGO_BIN_FILE_BAR_bar"));
+            }
+            "#,
+        )
+        .file(
+            "bar/Cargo.toml",
+            r#"
+                [package]
+                name = "bar"
+                version = "0.1.0"
+                edition = "2015"
+                authors = []
+
+                [[bin]]
+                name = "bar"
+            "#,
+        )
+        .file("bar/src/main.rs", "fn main() {}")
+        .build();
+
+    p.cargo("run -Zbuild-dir-new-layout -Z bindeps")
+        .masquerade_as_nightly_cargo(&["bindeps", "build-dir-new-layout"])
+        .enable_mac_dsym()
+        .with_stderr_data(str![[r#"
+[LOCKING] 1 package to latest compatible version
+[COMPILING] bar v0.1.0 ([ROOT]/foo/bar)
+[COMPILING] foo v0.0.0 ([ROOT]/foo)
+[FINISHED] `dev` profile [unoptimized + debuginfo] target(s) in [ELAPSED]s
+[RUNNING] `target-dir/debug/foo[EXE]`
+
+"#]])
+        .with_stdout_data(str![[r#"
+CARGO_BIN_DIR_BAR=[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin
+CARGO_BIN_FILE_BAR_bar=[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin/bar[..][EXE]
+
+"#]])
+        .run();
+
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/bar/[HASH]/fingerprint/bin-bar
+[ROOT]/foo/build-dir/debug/build/bar/[HASH]/fingerprint/bin-bar.json
+[ROOT]/foo/build-dir/debug/build/bar/[HASH]/fingerprint/dep-bin-bar
+[ROOT]/foo/build-dir/debug/build/bar/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
+[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin/bar[..][EXE]
+[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin/bar[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+
+"#]]);
+
+    p.root()
+        .join("target-dir")
+        .assert_build_dir_layout(str![[r#"
+[ROOT]/foo/target-dir/CACHEDIR.TAG
+[ROOT]/foo/target-dir/debug/.cargo-lock
+[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
+[ROOT]/foo/target-dir/debug/foo[EXE]
+[ROOT]/foo/target-dir/debug/foo.d
+
+"#]]);
+}
+
+#[cargo_test]
+fn examples_should_output_to_build_dir_and_uplift_to_target_dir() {
+    let p = project()
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
+        .file("examples/foo.rs", r#"fn main() { }"#)
+        .file(
+            ".cargo/config.toml",
+            r#"
+            [build]
+            target-dir = "target-dir"
+            build-dir = "build-dir"
+            "#,
+        )
+        .build();
+
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build --examples")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
+        .enable_mac_dsym()
+        .run();
+
+    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
+[ROOT]/foo/build-dir/.rustc_info.json
+[ROOT]/foo/build-dir/CACHEDIR.TAG
+[ROOT]/foo/build-dir/debug/.cargo-build-lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-example-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/example-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/example-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+
+"#]]);
+
+    assert!(!p.root().join("build-dir/debug/examples").exists());
+
+    p.root()
+        .join("target-dir")
+        .assert_build_dir_layout(str![[r#"
+[ROOT]/foo/target-dir/CACHEDIR.TAG
+[ROOT]/foo/target-dir/debug/.cargo-lock
+[ROOT]/foo/target-dir/debug/.cargo-artifact-lock
+[ROOT]/foo/target-dir/debug/examples/foo[EXE]
+[ROOT]/foo/target-dir/debug/examples/foo.d
 
 "#]]);
 }
@@ -1132,50 +1256,22 @@ fn template_workspace_path_hash_should_handle_symlink() {
 }
 
 #[cargo_test]
-fn template_should_handle_reject_unmatched_brackets() {
+fn cargo_tmpdir_should_output_to_build_dir() {
     let p = project()
-        .file("src/lib.rs", "")
+        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
         .file(
-            ".cargo/config.toml",
+            "tests/foo.rs",
             r#"
-            [build]
-            build-dir = "foo/{bar"
+            #[test]
+            fn test() {
+                std::fs::write(
+                    format!("{}/foo.txt", env!("CARGO_TARGET_TMPDIR")),
+                    "Hello, world!",
+                )
+                .unwrap();
+            }
             "#,
         )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking build")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .with_status(101)
-        .with_stderr_data(str![[r#"
-[ERROR] unexpected opening bracket `{` in build.build-dir path `foo/{bar`
-
-"#]])
-        .run();
-
-    let p = project()
-        .file("src/lib.rs", "")
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            build-dir = "foo/}bar"
-            "#,
-        )
-        .build();
-
-    p.cargo("build")
-        .with_status(101)
-        .with_stderr_data(str![[r#"
-[ERROR] unexpected closing bracket `}` in build.build-dir path `foo/}bar`
-
-"#]])
-        .run();
-}
-
-#[cargo_test]
-fn artifact_deps() {
-    let p = project()
         .file(
             ".cargo/config.toml",
             r#"
@@ -1184,79 +1280,39 @@ fn artifact_deps() {
             build-dir = "build-dir"
             "#,
         )
-        .file(
-            "Cargo.toml",
-            r#"
-                [package]
-                name = "foo"
-                version = "0.0.0"
-                edition = "2015"
-                authors = []
-                resolver = "2"
-
-                [dependencies]
-                bar = { path = "bar/", artifact = ["bin:bar"] }
-            "#,
-        )
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {
-                 println!("CARGO_BIN_DIR_BAR={}", env!("CARGO_BIN_DIR_BAR"));
-                 println!("CARGO_BIN_FILE_BAR_bar={}", env!("CARGO_BIN_FILE_BAR_bar"));
-            }
-            "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-                [package]
-                name = "bar"
-                version = "0.1.0"
-                edition = "2015"
-                authors = []
-
-                [[bin]]
-                name = "bar"
-            "#,
-        )
-        .file("bar/src/main.rs", "fn main() {}")
         .build();
 
-    p.cargo("run -Zbuild-dir-new-layout -Z bindeps")
-        .masquerade_as_nightly_cargo(&["bindeps", "build-dir-new-layout"])
+    p.cargo("-Zbuild-dir-new-layout -Zfine-grain-locking test")
+        .masquerade_as_nightly_cargo(&["new build-dir layout"])
         .enable_mac_dsym()
-        .with_stderr_data(str![[r#"
-[LOCKING] 1 package to latest compatible version
-[COMPILING] bar v0.1.0 ([ROOT]/foo/bar)
-[COMPILING] foo v0.0.0 ([ROOT]/foo)
-[FINISHED] `dev` profile [unoptimized + debuginfo] target(s) in [ELAPSED]s
-[RUNNING] `target-dir/debug/foo[EXE]`
-
-"#]])
-        .with_stdout_data(str![[r#"
-CARGO_BIN_DIR_BAR=[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin
-CARGO_BIN_FILE_BAR_bar=[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin/bar[..][EXE]
-
-"#]])
         .run();
 
     p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/.rustc_info.json
 [ROOT]/foo/build-dir/CACHEDIR.TAG
 [ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/bar/[HASH]/fingerprint/bin-bar
-[ROOT]/foo/build-dir/debug/build/bar/[HASH]/fingerprint/bin-bar.json
-[ROOT]/foo/build-dir/debug/build/bar/[HASH]/fingerprint/dep-bin-bar
-[ROOT]/foo/build-dir/debug/build/bar/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo-[HASH].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo.d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo-[HASH][EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[EXE]
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
 [ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-test-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-bin-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-bin-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-test-integration-test-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-integration-test-foo
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/test-integration-test-foo.json
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
 [ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
 [ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin/bar[..][EXE]
-[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin/bar[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+[ROOT]/foo/build-dir/debug/build/foo/[HASH]/.lock
+[ROOT]/foo/build-dir/tmp/foo.txt
+[ROOT]/foo/build-dir/.rustc_info.json
 
 "#]]);
 
@@ -1267,62 +1323,6 @@ CARGO_BIN_FILE_BAR_bar=[ROOT]/foo/build-dir/debug/build/bar/[HASH]/artifact/bin/
 [ROOT]/foo/target-dir/debug/.cargo-lock
 [ROOT]/foo/target-dir/debug/.cargo-artifact-lock
 [ROOT]/foo/target-dir/debug/foo[EXE]
-[ROOT]/foo/target-dir/debug/foo.d
-
-"#]]);
-}
-
-/// __CARGO_DEFAULT_LIB_METADATA is internal but used by rustc bootstrap and Miri
-/// Regression test for https://github.com/rust-lang/cargo/issues/16854
-#[cargo_test]
-fn should_work_with_cargo_default_lib_metadata() {
-    let p = project()
-        .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
-        .file("build.rs", r#"fn main() { }"#)
-        .file(
-            ".cargo/config.toml",
-            r#"
-            [build]
-            target-dir = "target-dir"
-            build-dir = "build-dir"
-            "#,
-        )
-        .build();
-
-    p.cargo("-Zbuild-dir-new-layout build")
-        .masquerade_as_nightly_cargo(&["new build-dir layout"])
-        .env("__CARGO_DEFAULT_LIB_METADATA", "true")
-        .enable_mac_dsym()
-        .with_stderr_data(str![[r#"
-[COMPILING] foo v0.0.1 ([ROOT]/foo)
-[FINISHED] `dev` profile [unoptimized + debuginfo] target(s) in [ELAPSED]s
-
-"#]])
-        .run();
-
-    // NOTE: build_script_build[EXE] does not contain a hash in the filename
-    p.root().join("build-dir").assert_build_dir_layout(str![[r#"
-[ROOT]/foo/build-dir/.rustc_info.json
-[ROOT]/foo/build-dir/CACHEDIR.TAG
-[ROOT]/foo/build-dir/debug/.cargo-build-lock
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/bin-foo.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-bin-foo
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..][EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/foo[..].d
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/run-build-script-build-script-build
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/run-build-script-build-script-build.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/root-output
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/stderr
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/run/stdout
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/build-script-build-script-build
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/build-script-build-script-build.json
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/dep-build-script-build-script-build
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/fingerprint/invoked.timestamp
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/build_script_build[EXE]
-[ROOT]/foo/build-dir/debug/build/foo/[HASH]/out/build_script_build.d
 
 "#]]);
 }
