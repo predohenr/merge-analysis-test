@@ -21,7 +21,7 @@ use stacks_common::util::hash::Hash160;
 use super::test_rpc;
 use crate::net::api::*;
 use crate::net::connection::ConnectionOptions;
-use crate::net::httpcore::{RPCRequestHandler, StacksHttp, StacksHttpRequest};
+use crate::net::httpcore::{ StacksHttpRequest, StacksHttp, HttpPreambleExtensions as _, RPCRequestHandler, };
 use crate::net::{Attachment, ProtocolFamily};
 
 #[test]

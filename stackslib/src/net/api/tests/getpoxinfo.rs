@@ -21,7 +21,7 @@ use clarity::types::chainstate::StacksBlockId;
 use super::test_rpc;
 use crate::net::api::getpoxinfo;
 use crate::net::connection::ConnectionOptions;
-use crate::net::httpcore::{HttpRequestContentsExtensions as _, StacksHttp, StacksHttpRequest};
+use crate::net::httpcore::{HttpRequestContentsExtensions as _, StacksHttp, HttpRequestContentsExtensions as _, HttpPreambleExtensions as _, StacksHttpRequest, };
 use crate::net::{ProtocolFamily, TipRequest};
 
 #[test]

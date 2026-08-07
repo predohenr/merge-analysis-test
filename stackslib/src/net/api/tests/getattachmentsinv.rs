@@ -22,7 +22,8 @@ use stacks_common::types::chainstate::StacksBlockId;
 use super::TestRPC;
 use crate::net::api::*;
 use crate::net::connection::ConnectionOptions;
-use crate::net::httpcore::{RPCRequestHandler, StacksHttp, StacksHttpRequest};
+use crate::net::httpcore::{
+    HttpPreambleExtensions as _, RPCRequestHandler, StacksHttp, StacksHttpRequest, };
 use crate::net::{Attachment, ProtocolFamily};
 
 #[test]
