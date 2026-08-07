@@ -16,7 +16,7 @@
 use std::collections::HashSet;
 
 // `::clarity` disambiguates the crate from a sibling `clarity` test module.
-use clarity::vm::costs::ExecutionCost;
+use ::clarity::vm::costs::ExecutionCost;
 use rstest::rstest;
 use rusqlite::{params, Connection};
 use stacks_common::types::chainstate::{
@@ -29,8 +29,8 @@ use crate::chainstate::stacks::db::{StacksChainState, StacksHeaderInfo};
 use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MARF};
 use crate::chainstate::stacks::index::{trie_sql, ClarityMarfTrieId, Error, MARFValue};
 
-mod blocks;
 mod burnchain;
+mod blocks;
 mod clarity;
 mod index;
 mod sortition;
