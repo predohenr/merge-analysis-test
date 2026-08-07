@@ -2647,6 +2647,20 @@ impl NodeConfig {
             self.event_dispatcher_queue_size
         }
     }
+
+    pub fn get_marf_opts(&self) -> MARFOpenOpts {
+        let hash_mode = if self.marf_defer_hashing {
+            TrieHashCalculationMode::Deferred
+        } else {
+            TrieHashCalculationMode::Immediate
+        };
+
+        MARFOpenOpts::new(
+            hash_mode,
+            self.marf_cache_strategy.as_deref().unwrap_or("noop"),
+            false,
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
