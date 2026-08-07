@@ -10,6 +10,10 @@
 #![no_main]
 #![deny(missing_docs)]
 
+use capsules_core::virtualizers::virtual_aes_ccm::MuxAES128CCM;
+
+use core::ptr::addr_of;
+
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
