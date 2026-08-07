@@ -14709,6 +14709,287 @@ fn contract_limit_percentage_mempool_strategy_high_limit() {
     run_loop_thread.join().unwrap();
 }
 
+#[test]
+#[ignore]
+/// Verify the block timestamp using `block-time`.
+fn check_block_time_keyword() {
+    if env::var("BITCOIND_TEST") != Ok("1".into()) {
+        return;
+    }
+
+    let mut signers = TestSigners::default();
+    let (mut naka_conf, _miner_account) = naka_neon_integration_conf(None);
+    let http_origin = format!("http://{}", &naka_conf.node.rpc_bind);
+    naka_conf.burnchain.chain_id = CHAIN_ID_TESTNET + 1;
+    let sender_sk = Secp256k1PrivateKey::random();
+    let sender_signer_sk = Secp256k1PrivateKey::random();
+    let sender_signer_addr = tests::to_addr(&sender_signer_sk);
+
+    // setup sender + recipient for some test stx transfers
+    // these are necessary for the interim blocks to get mined at all
+    let sender_addr = tests::to_addr(&sender_sk);
+    let send_amt = 100;
+    let send_fee = 180;
+    let deploy_fee = 3000;
+    naka_conf.add_initial_balance(
+        PrincipalData::from(sender_addr.clone()).to_string(),
+        3 * deploy_fee + (send_amt + send_fee) * 12,
+    );
+    naka_conf.add_initial_balance(
+        PrincipalData::from(sender_signer_addr.clone()).to_string(),
+        100000,
+    );
+
+    // Add epoch 3.3 to the configuration because it is not yet added to the
+    // default epoch list for integration tests.
+    naka_conf.burnchain.epochs = Some(EpochList::new(&*NAKAMOTO_INTEGRATION_3_3_EPOCHS));
+
+    let stacker_sk = setup_stacker(&mut naka_conf);
+
+    test_observer::spawn();
+    test_observer::register_any(&mut naka_conf);
+
+    let mut btcd_controller = BitcoinCoreController::from_stx_config(&naka_conf);
+    btcd_controller
+        .start_bitcoind()
+        .expect("Failed starting bitcoind");
+    let mut btc_regtest_controller = BitcoinRegtestController::new(naka_conf.clone(), None);
+    btc_regtest_controller.bootstrap_chain(201);
+
+    let mut run_loop = boot_nakamoto::BootRunLoop::new(naka_conf.clone()).unwrap();
+    let run_loop_stopper = run_loop.get_termination_switch();
+    let Counters {
+        blocks_processed, ..
+    } = run_loop.counters();
+    let counters = run_loop.counters();
+
+    let coord_channel = run_loop.coordinator_channels();
+
+    let run_loop_thread = thread::Builder::new()
+        .name("run_loop".into())
+        .spawn(move || run_loop.start(None, 0))
+        .unwrap();
+    wait_for_runloop(&blocks_processed);
+
+    boot_to_epoch_3(
+        &naka_conf,
+        &blocks_processed,
+        &[stacker_sk.clone()],
+        &[sender_signer_sk],
+        &mut Some(&mut signers),
+        &mut btc_regtest_controller,
+    );
+
+    info!("Bootstrapped to Epoch-3.0 boundary, starting nakamoto miner");
+
+    info!("Nakamoto miner started...");
+    blind_signer(&naka_conf, &signers, &counters);
+    wait_for_first_naka_block_commit(60, &counters.naka_submitted_commits);
+
+    // mine until epoch 3.3 height
+    loop {
+        next_block_and_process_new_stacks_block(&mut btc_regtest_controller, 60, &coord_channel)
+            .unwrap();
+
+        // once we actually get a block in epoch 3.3, exit
+        let blocks = test_observer::get_blocks();
+        let last_block = blocks.last().unwrap();
+        if last_block
+            .get("burn_block_height")
+            .unwrap()
+            .as_u64()
+            .unwrap()
+            >= naka_conf.burnchain.epochs.as_ref().unwrap()[StacksEpochId::Epoch33].start_height
+        {
+            break;
+        }
+    }
+
+    info!(
+        "Nakamoto miner has advanced to bitcoin height {}",
+        get_chain_info_opt(&naka_conf).unwrap().burn_block_height
+    );
+
+    let info = get_chain_info_result(&naka_conf).unwrap();
+    let last_stacks_block_height = info.stacks_tip_height as u128;
+
+    next_block_and_mine_commit(&mut btc_regtest_controller, 60, &naka_conf, &counters).unwrap();
+
+    let mut sender_nonce = 0;
+    let contract_name = "test-contract";
+    let contract = r#"
+(define-constant deploy-time block-time)
+(define-constant deploy-height stacks-block-height)
+(define-read-only (get-current-time)
+  block-time
+)
+(define-read-only (get-ihh (height uint)) (get-stacks-block-info? id-header-hash height))
+(define-read-only (get-time (height uint)) (get-stacks-block-info? time height))
+(define-read-only (get-height) stacks-block-height)
+(define-read-only (get-previous-time (height uint))
+  (ok (at-block (unwrap! (get-stacks-block-info? id-header-hash height) (err u100))
+    block-time
+  ))
+)
+(define-public (get-current-time-call)
+  (ok block-time)
+)
+(define-public (get-previous-time-call (height uint))
+  (ok (at-block (unwrap! (get-stacks-block-info? id-header-hash height) (err u100))
+    block-time
+  ))
+)
+"#;
+
+    let contract_tx = make_contract_publish_versioned(
+        &sender_sk,
+        sender_nonce,
+        deploy_fee,
+        naka_conf.burnchain.chain_id,
+        contract_name,
+        contract,
+        Some(ClarityVersion::Clarity4),
+    );
+    sender_nonce += 1;
+    submit_tx(&http_origin, &contract_tx);
+
+    let mut stacks_block_height = 0;
+    wait_for(60, || {
+        let cur_sender_nonce = get_account(&http_origin, &to_addr(&sender_sk)).nonce;
+        let info = get_chain_info_result(&naka_conf).unwrap();
+        stacks_block_height = info.stacks_tip_height as u128;
+        Ok(stacks_block_height > last_stacks_block_height && cur_sender_nonce == sender_nonce)
+    })
+    .expect("Timed out waiting for contracts to publish");
+
+    next_block_and_process_new_stacks_block(&mut btc_regtest_controller, 30, &coord_channel)
+        .unwrap();
+
+    let deploy_time_value = get_constant(&naka_conf, &sender_addr, contract_name, "deploy-time");
+    let deploy_time = deploy_time_value.clone().expect_u128().unwrap();
+    let deploy_height = get_constant(&naka_conf, &sender_addr, contract_name, "deploy-height");
+
+    let current_time_value = call_read_only(
+        &naka_conf,
+        &sender_addr,
+        contract_name,
+        "get-current-time",
+        vec![],
+    )
+    .result()
+    .unwrap();
+    info!("Current time: {current_time_value}");
+    let current_time = current_time_value.expect_u128().unwrap();
+    assert!(
+        current_time > deploy_time,
+        "block-time should be greater than the time at deployment"
+    );
+
+    let previous_time_result = call_read_only(
+        &naka_conf,
+        &sender_addr,
+        contract_name,
+        "get-previous-time",
+        vec![&deploy_height],
+    )
+    .result()
+    .unwrap();
+    let previous_time_value = previous_time_result.expect_result_ok().unwrap();
+    info!("Previous time: {previous_time_value}");
+    assert_eq!(
+        previous_time_value, deploy_time_value,
+        "get-previous-time should be the same as at deployment"
+    );
+
+    test_observer::clear();
+
+    let last_time_tx = make_contract_call(
+        &sender_sk,
+        sender_nonce,
+        deploy_fee,
+        naka_conf.burnchain.chain_id,
+        &sender_addr,
+        contract_name,
+        "get-current-time-call",
+        &[],
+    );
+    sender_nonce += 1;
+    submit_tx(&http_origin, &last_time_tx);
+
+    let prev_time_tx = make_contract_call(
+        &sender_sk,
+        sender_nonce,
+        deploy_fee,
+        naka_conf.burnchain.chain_id,
+        &sender_addr,
+        contract_name,
+        "get-previous-time-call",
+        &[deploy_height],
+    );
+    sender_nonce += 1;
+    submit_tx(&http_origin, &prev_time_tx);
+
+    wait_for(60, || {
+        let cur_sender_nonce = get_account(&http_origin, &to_addr(&sender_sk)).nonce;
+        Ok(cur_sender_nonce == sender_nonce)
+    })
+    .expect("Timed out waiting for contract calls");
+
+    let blocks = test_observer::get_blocks();
+    info!("Blocks: {:?}", blocks);
+    for block in blocks.iter() {
+        for tx in block.get("transactions").unwrap().as_array().unwrap() {
+            let raw_tx = tx.get("raw_tx").unwrap().as_str().unwrap();
+            if raw_tx == "0x00" {
+                continue;
+            }
+            let tx_bytes = hex_bytes(&raw_tx[2..]).unwrap();
+            let parsed = StacksTransaction::consensus_deserialize(&mut &tx_bytes[..]).unwrap();
+            if let TransactionPayload::ContractCall(contract_call) = parsed.payload {
+                eprintln!("{}", contract_call.function_name.as_str());
+                let raw_result = tx.get("raw_result").unwrap().as_str().unwrap();
+                let parsed = Value::try_deserialize_hex_untyped(&raw_result[2..]).unwrap();
+                let time = parsed.expect_result_ok().unwrap().expect_u128().unwrap();
+                match contract_call.function_name.as_str() {
+                    "get-current-time-call" => {
+                        info!("Current time: {}", time);
+                        assert!(time > current_time, "block-time should have advanced");
+                    }
+                    "get-previous-time-call" => {
+                        info!("Previous time: {}", time);
+                        assert_eq!(
+                            time, deploy_time,
+                            "block-time should be the same as at deployment"
+                        );
+                    }
+                    _ => panic!("Unexpected contract call"),
+                }
+            }
+        }
+    }
+
+    // Attempting to get block time for an pre-3.3 block should cause an error
+    let err = call_read_only(
+        &naka_conf,
+        &sender_addr,
+        contract_name,
+        "get-previous-time",
+        vec![&Value::UInt(1)],
+    )
+    .result()
+    .expect_err("Expected error, got ");
+    info!("Invalid time: {err}");
+    assert!(err.starts_with("BlockTimeNotAvailable"));
+
+    coord_channel
+        .lock()
+        .expect("Mutex poisoned")
+        .stop_chains_coordinator();
+    run_loop_stopper.store(false, Ordering::SeqCst);
+
+    run_loop_thread.join().unwrap();
+}
+
 /// Test the effect of a low contract_limit_percentage value on the mempool
 /// walk strategy.
 ///
@@ -15048,466 +15329,6 @@ fn contract_limit_percentage_mempool_strategy_low_limit() {
 
 #[test]
 #[ignore]
-/// Verify the block timestamp using `block-time`.
-fn check_block_time_keyword() {
-    if env::var("BITCOIND_TEST") != Ok("1".into()) {
-        return;
-    }
-
-    let mut signers = TestSigners::default();
-    let (mut naka_conf, _miner_account) = naka_neon_integration_conf(None);
-    let http_origin = format!("http://{}", &naka_conf.node.rpc_bind);
-    naka_conf.burnchain.chain_id = CHAIN_ID_TESTNET + 1;
-    let sender_sk = Secp256k1PrivateKey::random();
-    let sender_signer_sk = Secp256k1PrivateKey::random();
-    let sender_signer_addr = tests::to_addr(&sender_signer_sk);
-
-    // setup sender + recipient for some test stx transfers
-    // these are necessary for the interim blocks to get mined at all
-    let sender_addr = tests::to_addr(&sender_sk);
-    let send_amt = 100;
-    let send_fee = 180;
-    let deploy_fee = 3000;
-    naka_conf.add_initial_balance(
-        PrincipalData::from(sender_addr.clone()).to_string(),
-        3 * deploy_fee + (send_amt + send_fee) * 12,
-    );
-    naka_conf.add_initial_balance(
-        PrincipalData::from(sender_signer_addr.clone()).to_string(),
-        100000,
-    );
-
-    // Add epoch 3.3 to the configuration because it is not yet added to the
-    // default epoch list for integration tests.
-    naka_conf.burnchain.epochs = Some(EpochList::new(&*NAKAMOTO_INTEGRATION_3_3_EPOCHS));
-
-    let stacker_sk = setup_stacker(&mut naka_conf);
-
-    test_observer::spawn();
-    test_observer::register_any(&mut naka_conf);
-
-    let mut btcd_controller = BitcoinCoreController::from_stx_config(&naka_conf);
-    btcd_controller
-        .start_bitcoind()
-        .expect("Failed starting bitcoind");
-    let mut btc_regtest_controller = BitcoinRegtestController::new(naka_conf.clone(), None);
-    btc_regtest_controller.bootstrap_chain(201);
-
-    let mut run_loop = boot_nakamoto::BootRunLoop::new(naka_conf.clone()).unwrap();
-    let run_loop_stopper = run_loop.get_termination_switch();
-    let Counters {
-        blocks_processed, ..
-    } = run_loop.counters();
-    let counters = run_loop.counters();
-
-    let coord_channel = run_loop.coordinator_channels();
-
-    let run_loop_thread = thread::Builder::new()
-        .name("run_loop".into())
-        .spawn(move || run_loop.start(None, 0))
-        .unwrap();
-    wait_for_runloop(&blocks_processed);
-
-    boot_to_epoch_3(
-        &naka_conf,
-        &blocks_processed,
-        &[stacker_sk.clone()],
-        &[sender_signer_sk],
-        &mut Some(&mut signers),
-        &mut btc_regtest_controller,
-    );
-
-    info!("Bootstrapped to Epoch-3.0 boundary, starting nakamoto miner");
-
-    info!("Nakamoto miner started...");
-    blind_signer(&naka_conf, &signers, &counters);
-    wait_for_first_naka_block_commit(60, &counters.naka_submitted_commits);
-
-    // mine until epoch 3.3 height
-    loop {
-        next_block_and_process_new_stacks_block(&mut btc_regtest_controller, 60, &coord_channel)
-            .unwrap();
-
-        // once we actually get a block in epoch 3.3, exit
-        let blocks = test_observer::get_blocks();
-        let last_block = blocks.last().unwrap();
-        if last_block
-            .get("burn_block_height")
-            .unwrap()
-            .as_u64()
-            .unwrap()
-            >= naka_conf.burnchain.epochs.as_ref().unwrap()[StacksEpochId::Epoch33].start_height
-        {
-            break;
-        }
-    }
-
-    info!(
-        "Nakamoto miner has advanced to bitcoin height {}",
-        get_chain_info_opt(&naka_conf).unwrap().burn_block_height
-    );
-
-    let info = get_chain_info_result(&naka_conf).unwrap();
-    let last_stacks_block_height = info.stacks_tip_height as u128;
-
-    next_block_and_mine_commit(&mut btc_regtest_controller, 60, &naka_conf, &counters).unwrap();
-
-    let mut sender_nonce = 0;
-    let contract_name = "test-contract";
-    let contract = r#"
-(define-constant deploy-time block-time)
-(define-constant deploy-height stacks-block-height)
-(define-read-only (get-current-time)
-  block-time
-)
-(define-read-only (get-ihh (height uint)) (get-stacks-block-info? id-header-hash height))
-(define-read-only (get-time (height uint)) (get-stacks-block-info? time height))
-(define-read-only (get-height) stacks-block-height)
-(define-read-only (get-previous-time (height uint))
-  (ok (at-block (unwrap! (get-stacks-block-info? id-header-hash height) (err u100))
-    block-time
-  ))
-)
-(define-public (get-current-time-call)
-  (ok block-time)
-)
-(define-public (get-previous-time-call (height uint))
-  (ok (at-block (unwrap! (get-stacks-block-info? id-header-hash height) (err u100))
-    block-time
-  ))
-)
-"#;
-
-    let contract_tx = make_contract_publish_versioned(
-        &sender_sk,
-        sender_nonce,
-        deploy_fee,
-        naka_conf.burnchain.chain_id,
-        contract_name,
-        contract,
-        Some(ClarityVersion::Clarity4),
-    );
-    sender_nonce += 1;
-    submit_tx(&http_origin, &contract_tx);
-
-    let mut stacks_block_height = 0;
-    wait_for(60, || {
-        let cur_sender_nonce = get_account(&http_origin, &to_addr(&sender_sk)).nonce;
-        let info = get_chain_info_result(&naka_conf).unwrap();
-        stacks_block_height = info.stacks_tip_height as u128;
-        Ok(stacks_block_height > last_stacks_block_height && cur_sender_nonce == sender_nonce)
-    })
-    .expect("Timed out waiting for contracts to publish");
-
-    next_block_and_process_new_stacks_block(&mut btc_regtest_controller, 30, &coord_channel)
-        .unwrap();
-
-    let deploy_time_value = get_constant(&naka_conf, &sender_addr, contract_name, "deploy-time");
-    let deploy_time = deploy_time_value.clone().expect_u128().unwrap();
-    let deploy_height = get_constant(&naka_conf, &sender_addr, contract_name, "deploy-height");
-
-    let current_time_value = call_read_only(
-        &naka_conf,
-        &sender_addr,
-        contract_name,
-        "get-current-time",
-        vec![],
-    )
-    .result()
-    .unwrap();
-    info!("Current time: {current_time_value}");
-    let current_time = current_time_value.expect_u128().unwrap();
-    assert!(
-        current_time > deploy_time,
-        "block-time should be greater than the time at deployment"
-    );
-
-    let previous_time_result = call_read_only(
-        &naka_conf,
-        &sender_addr,
-        contract_name,
-        "get-previous-time",
-        vec![&deploy_height],
-    )
-    .result()
-    .unwrap();
-    let previous_time_value = previous_time_result.expect_result_ok().unwrap();
-    info!("Previous time: {previous_time_value}");
-    assert_eq!(
-        previous_time_value, deploy_time_value,
-        "get-previous-time should be the same as at deployment"
-    );
-
-    test_observer::clear();
-
-    let last_time_tx = make_contract_call(
-        &sender_sk,
-        sender_nonce,
-        deploy_fee,
-        naka_conf.burnchain.chain_id,
-        &sender_addr,
-        contract_name,
-        "get-current-time-call",
-        &[],
-    );
-    sender_nonce += 1;
-    submit_tx(&http_origin, &last_time_tx);
-
-    let prev_time_tx = make_contract_call(
-        &sender_sk,
-        sender_nonce,
-        deploy_fee,
-        naka_conf.burnchain.chain_id,
-        &sender_addr,
-        contract_name,
-        "get-previous-time-call",
-        &[deploy_height],
-    );
-    sender_nonce += 1;
-    submit_tx(&http_origin, &prev_time_tx);
-
-    wait_for(60, || {
-        let cur_sender_nonce = get_account(&http_origin, &to_addr(&sender_sk)).nonce;
-        Ok(cur_sender_nonce == sender_nonce)
-    })
-    .expect("Timed out waiting for contract calls");
-
-    let blocks = test_observer::get_blocks();
-    info!("Blocks: {:?}", blocks);
-    for block in blocks.iter() {
-        for tx in block.get("transactions").unwrap().as_array().unwrap() {
-            let raw_tx = tx.get("raw_tx").unwrap().as_str().unwrap();
-            if raw_tx == "0x00" {
-                continue;
-            }
-            let tx_bytes = hex_bytes(&raw_tx[2..]).unwrap();
-            let parsed = StacksTransaction::consensus_deserialize(&mut &tx_bytes[..]).unwrap();
-            if let TransactionPayload::ContractCall(contract_call) = parsed.payload {
-                eprintln!("{}", contract_call.function_name.as_str());
-                let raw_result = tx.get("raw_result").unwrap().as_str().unwrap();
-                let parsed = Value::try_deserialize_hex_untyped(&raw_result[2..]).unwrap();
-                let time = parsed.expect_result_ok().unwrap().expect_u128().unwrap();
-                match contract_call.function_name.as_str() {
-                    "get-current-time-call" => {
-                        info!("Current time: {}", time);
-                        assert!(time > current_time, "block-time should have advanced");
-                    }
-                    "get-previous-time-call" => {
-                        info!("Previous time: {}", time);
-                        assert_eq!(
-                            time, deploy_time,
-                            "block-time should be the same as at deployment"
-                        );
-                    }
-                    _ => panic!("Unexpected contract call"),
-                }
-            }
-        }
-    }
-
-    // Attempting to get block time for an pre-3.3 block should cause an error
-    let err = call_read_only(
-        &naka_conf,
-        &sender_addr,
-        contract_name,
-        "get-previous-time",
-        vec![&Value::UInt(1)],
-    )
-    .result()
-    .expect_err("Expected error, got ");
-    info!("Invalid time: {err}");
-    assert!(err.starts_with("BlockTimeNotAvailable"));
-
-    coord_channel
-        .lock()
-        .expect("Mutex poisoned")
-        .stop_chains_coordinator();
-    run_loop_stopper.store(false, Ordering::SeqCst);
-
-    run_loop_thread.join().unwrap();
-}
-
-#[test]
-#[ignore]
-/// Tests that the tenure size limit is correctly accounted.
-/// Deploys 10 (big) contracts (each 512K)
-/// The block limit is 2MB, the tenure limit is 3MB
-/// One block will contains 3 of the deployed contracts (the block size will be reached at it)
-/// The following one will contains 2 of the deployed contract (tenure size limit will be reached)
-fn smaller_tenure_size_for_miner() {
-    if env::var("BITCOIND_TEST") != Ok("1".into()) {
-        return;
-    }
-
-    let (mut naka_conf, _miner_account) = naka_neon_integration_conf(None);
-
-    let http_origin = format!("http://{}", &naka_conf.node.rpc_bind);
-
-    let mut senders: Vec<(Secp256k1PrivateKey, StacksAddress)> = vec![];
-
-    // number of deploys to submit in the test
-    let num_deploys = 10;
-
-    for _ in 0..num_deploys {
-        let sender_sk = Secp256k1PrivateKey::random();
-        let sender_addr = tests::to_addr(&sender_sk);
-        naka_conf.add_initial_balance(
-            PrincipalData::from(sender_addr.clone()).to_string(),
-            10000000000000,
-        );
-
-        senders.push((sender_sk, sender_addr));
-    }
-
-    let signer_sk = Secp256k1PrivateKey::random();
-    let signer_addr = tests::to_addr(&signer_sk);
-
-    naka_conf.miner.max_tenure_bytes = 3 * 1024 * 1024; // 3MB
-    naka_conf.miner.log_skipped_transactions = true;
-
-    naka_conf.add_initial_balance(
-        PrincipalData::from(signer_addr.clone()).to_string(),
-        10000000000000,
-    );
-    let mut signers = TestSigners::new(vec![signer_sk.clone()]);
-
-    let stacker_sk = setup_stacker(&mut naka_conf);
-
-    test_observer::spawn();
-    test_observer::register(
-        &mut naka_conf,
-        &[EventKeyType::AnyEvent, EventKeyType::MinedBlocks],
-    );
-
-    let mut btcd_controller = BitcoinCoreController::from_stx_config(&naka_conf);
-    btcd_controller
-        .start_bitcoind()
-        .expect("Failed starting bitcoind");
-    let mut btc_regtest_controller = BitcoinRegtestController::new(naka_conf.clone(), None);
-    btc_regtest_controller.bootstrap_chain(201);
-
-    let mut run_loop = boot_nakamoto::BootRunLoop::new(naka_conf.clone()).unwrap();
-    let run_loop_stopper = run_loop.get_termination_switch();
-    let Counters {
-        blocks_processed, ..
-    } = run_loop.counters();
-    let counters = run_loop.counters();
-
-    let coord_channel = run_loop.coordinator_channels();
-
-    let run_loop_thread = thread::Builder::new()
-        .name("run_loop".into())
-        .spawn(move || run_loop.start(None, 0))
-        .unwrap();
-    wait_for_runloop(&blocks_processed);
-
-    boot_to_epoch_3(
-        &naka_conf,
-        &blocks_processed,
-        &[stacker_sk.clone()],
-        &[signer_sk],
-        &mut Some(&mut signers),
-        &mut btc_regtest_controller,
-    );
-
-    info!("Bootstrapped to Epoch-3.0 boundary, starting nakamoto miner");
-
-    info!("Nakamoto miner started...");
-    blind_signer(&naka_conf, &signers, &counters);
-
-    let mut long_comment = String::from(";; ");
-    long_comment.extend(std::iter::repeat('x').take(524_288 - long_comment.len()));
-    let contract = format!(
-        r#"
-        {long_comment}
-        (define-public (test-fn)
-          (ok "Hello, world!")
-        )
-     "#
-    );
-
-    let deploy_fee = 524504;
-
-    test_observer::clear();
-
-    for deploy in 0..num_deploys {
-        info!("Submitting deploy {deploy}");
-        let contract_name = format!("test-{deploy}");
-
-        let contract_tx = make_contract_publish(
-            &senders[deploy].0,
-            0,
-            deploy_fee,
-            naka_conf.burnchain.chain_id,
-            &contract_name,
-            &contract,
-        );
-
-        submit_tx(&http_origin, &contract_tx);
-    }
-
-    next_block_and(&mut btc_regtest_controller, 60, || {
-        let nakamoto_block_events = test_observer::get_mined_nakamoto_blocks();
-        if !nakamoto_block_events.is_empty() {
-            let nakamoto_block_event = nakamoto_block_events.last().unwrap();
-            let mut skipped_transactions = 0;
-            for tx_event in &nakamoto_block_event.tx_events {
-                match tx_event {
-                    TransactionEvent::Skipped(reason) => {
-                        if reason.error == "Too much data in tenure" {
-                            skipped_transactions += 1;
-                        }
-                    }
-                    _ => (),
-                }
-            }
-            // assume 2 blocks, the first one with 3 transactions the second with 2
-            // that means we will have 5 skipped transactions at the end
-            if skipped_transactions == 5 {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    })
-    .unwrap();
-
-    // wait for signers
-    wait_for(30, || Ok(test_observer::get_blocks().len() >= 3))
-        .expect("Timed out waiting for signers");
-
-    let blocks = test_observer::get_blocks();
-
-    assert_eq!(
-        blocks.len(),
-        3,
-        "Should have successfully mined three blocks, but got {}",
-        blocks.len()
-    );
-
-    let mut deployed_contracts = 0;
-    for deploy in 0..num_deploys {
-        if get_account(&http_origin, &senders[deploy].1).nonce == 1 {
-            deployed_contracts += 1;
-        }
-    }
-
-    assert_eq!(
-        deployed_contracts, 5,
-        "Should have successfully deployed 5 contracts, but got {}",
-        deployed_contracts
-    );
-
-    coord_channel
-        .lock()
-        .expect("Mutex poisoned")
-        .stop_chains_coordinator();
-    run_loop_stopper.store(false, Ordering::SeqCst);
-
-    run_loop_thread.join().unwrap();
-}
-
-#[test]
-#[ignore]
 /// Tests that the tenure size limit is correctly accounted.
 /// Deploys 10 (big) contracts (each 512K)
 /// The block limit is 2MB, the tenure limit is 3MB
@@ -15706,6 +15527,185 @@ fn smaller_tenure_size_for_miner_on_two_tenures() {
     assert_eq!(
         deployed_contracts, 10,
         "Should have successfully deployes 10 contracts, but got {}",
+        deployed_contracts
+    );
+
+    coord_channel
+        .lock()
+        .expect("Mutex poisoned")
+        .stop_chains_coordinator();
+    run_loop_stopper.store(false, Ordering::SeqCst);
+
+    run_loop_thread.join().unwrap();
+}
+
+#[test]
+#[ignore]
+/// Tests that the tenure size limit is correctly accounted.
+/// Deploys 10 (big) contracts (each 512K)
+/// The block limit is 2MB, the tenure limit is 3MB
+/// One block will contains 3 of the deployed contracts (the block size will be reached at it)
+/// The following one will contains 2 of the deployed contract (tenure size limit will be reached)
+fn smaller_tenure_size_for_miner() {
+    if env::var("BITCOIND_TEST") != Ok("1".into()) {
+        return;
+    }
+
+    let (mut naka_conf, _miner_account) = naka_neon_integration_conf(None);
+
+    let http_origin = format!("http://{}", &naka_conf.node.rpc_bind);
+
+    let mut senders: Vec<(Secp256k1PrivateKey, StacksAddress)> = vec![];
+
+    // number of deploys to submit in the test
+    let num_deploys = 10;
+
+    for _ in 0..num_deploys {
+        let sender_sk = Secp256k1PrivateKey::random();
+        let sender_addr = tests::to_addr(&sender_sk);
+        naka_conf.add_initial_balance(
+            PrincipalData::from(sender_addr.clone()).to_string(),
+            10000000000000,
+        );
+
+        senders.push((sender_sk, sender_addr));
+    }
+
+    let signer_sk = Secp256k1PrivateKey::random();
+    let signer_addr = tests::to_addr(&signer_sk);
+
+    naka_conf.miner.max_tenure_bytes = 3 * 1024 * 1024; // 3MB
+    naka_conf.miner.log_skipped_transactions = true;
+
+    naka_conf.add_initial_balance(
+        PrincipalData::from(signer_addr.clone()).to_string(),
+        10000000000000,
+    );
+    let mut signers = TestSigners::new(vec![signer_sk.clone()]);
+
+    let stacker_sk = setup_stacker(&mut naka_conf);
+
+    test_observer::spawn();
+    test_observer::register(
+        &mut naka_conf,
+        &[EventKeyType::AnyEvent, EventKeyType::MinedBlocks],
+    );
+
+    let mut btcd_controller = BitcoinCoreController::from_stx_config(&naka_conf);
+    btcd_controller
+        .start_bitcoind()
+        .expect("Failed starting bitcoind");
+    let mut btc_regtest_controller = BitcoinRegtestController::new(naka_conf.clone(), None);
+    btc_regtest_controller.bootstrap_chain(201);
+
+    let mut run_loop = boot_nakamoto::BootRunLoop::new(naka_conf.clone()).unwrap();
+    let run_loop_stopper = run_loop.get_termination_switch();
+    let Counters {
+        blocks_processed, ..
+    } = run_loop.counters();
+    let counters = run_loop.counters();
+
+    let coord_channel = run_loop.coordinator_channels();
+
+    let run_loop_thread = thread::Builder::new()
+        .name("run_loop".into())
+        .spawn(move || run_loop.start(None, 0))
+        .unwrap();
+    wait_for_runloop(&blocks_processed);
+
+    boot_to_epoch_3(
+        &naka_conf,
+        &blocks_processed,
+        &[stacker_sk.clone()],
+        &[signer_sk],
+        &mut Some(&mut signers),
+        &mut btc_regtest_controller,
+    );
+
+    info!("Bootstrapped to Epoch-3.0 boundary, starting nakamoto miner");
+
+    info!("Nakamoto miner started...");
+    blind_signer(&naka_conf, &signers, &counters);
+
+    let mut long_comment = String::from(";; ");
+    long_comment.extend(std::iter::repeat('x').take(524_288 - long_comment.len()));
+    let contract = format!(
+        r#"
+        {long_comment}
+        (define-public (test-fn)
+          (ok "Hello, world!")
+        )
+     "#
+    );
+
+    let deploy_fee = 524504;
+
+    test_observer::clear();
+
+    for deploy in 0..num_deploys {
+        info!("Submitting deploy {deploy}");
+        let contract_name = format!("test-{deploy}");
+
+        let contract_tx = make_contract_publish(
+            &senders[deploy].0,
+            0,
+            deploy_fee,
+            naka_conf.burnchain.chain_id,
+            &contract_name,
+            &contract,
+        );
+
+        submit_tx(&http_origin, &contract_tx);
+    }
+
+    next_block_and(&mut btc_regtest_controller, 60, || {
+        let nakamoto_block_events = test_observer::get_mined_nakamoto_blocks();
+        if !nakamoto_block_events.is_empty() {
+            let nakamoto_block_event = nakamoto_block_events.last().unwrap();
+            let mut skipped_transactions = 0;
+            for tx_event in &nakamoto_block_event.tx_events {
+                match tx_event {
+                    TransactionEvent::Skipped(reason) => {
+                        if reason.error == "Too much data in tenure" {
+                            skipped_transactions += 1;
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            // assume 2 blocks, the first one with 3 transactions the second with 2
+            // that means we will have 5 skipped transactions at the end
+            if skipped_transactions == 5 {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    })
+    .unwrap();
+
+    // wait for signers
+    wait_for(30, || Ok(test_observer::get_blocks().len() >= 3))
+        .expect("Timed out waiting for signers");
+
+    let blocks = test_observer::get_blocks();
+
+    assert_eq!(
+        blocks.len(),
+        3,
+        "Should have successfully mined three blocks, but got {}",
+        blocks.len()
+    );
+
+    let mut deployed_contracts = 0;
+    for deploy in 0..num_deploys {
+        if get_account(&http_origin, &senders[deploy].1).nonce == 1 {
+            deployed_contracts += 1;
+        }
+    }
+
+    assert_eq!(
+        deployed_contracts, 5,
+        "Should have successfully deployed 5 contracts, but got {}",
         deployed_contracts
     );
 
