@@ -24,8 +24,8 @@
 //!
 //! Detectable violations surface as `CorruptionError`s.
 
-mod blocks;
 mod clarity;
+mod blocks;
 pub(crate) mod common;
 pub(crate) mod fork_storage;
 mod index;
@@ -33,9 +33,9 @@ mod index;
 #[cfg(test)]
 mod tests;
 
+pub use clarity::{copy_clarity_side_tables, ClaritySideTableStats};
 pub use blocks::{
     copy_confirmed_epoch2_microblocks, copy_epoch2_block_files, copy_nakamoto_staging_blocks,
     Epoch2BlockFileCopyStats, Epoch2MicroblockCopyStats, NakamotoBlockCopyStats,
 };
-pub use clarity::{copy_clarity_side_tables, ClaritySideTableStats};
 pub use index::{copy_index_side_tables, IndexSideTableStats};
