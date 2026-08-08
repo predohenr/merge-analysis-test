@@ -28,6 +28,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import NamedTuple
 import warnings
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -1544,7 +1545,9 @@ def linear_rainbow(res, frac=0.5, order_by=None, use_distance=False, center=None
         endog = endog[order_by]
         exog = exog[order_by]
     if use_distance:
+        
         if center is not None:
+            
             warnings.warn(
                 "The center keyword is deprecated and no longer has any "
                 "effect. The Mahalanobis distances used to order the "
