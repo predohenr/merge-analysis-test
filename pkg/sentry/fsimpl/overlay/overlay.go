@@ -1004,18 +1004,6 @@ func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	return fs.removeXattrLocked(ctx, fd.dentry(), fd.vfsfd.Mount(), auth.CredentialsFromContext(ctx), name)
 }
 
-// GetPosixACL implements vfs.FileDescriptionImpl.GetPosixACL.
-func (fd *fileDescription) GetPosixACL(ctx context.Context, t vfs.ACLType) (*vfs.PosixACL, error) {
-	// overlayfs does not yet support POSIX ACLs.
-	return nil, nil
-}
-
-// SetPosixACL implements vfs.FileDescriptionImpl.SetPosixACL.
-func (fd *fileDescription) SetPosixACL(ctx context.Context, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
-	// overlayfs does not yet support POSIX ACLs.
-	return nil, 0, linuxerr.EOPNOTSUPP
-}
-
 // IsCopiedUp returns true if the given vfs.Dentry is an overlayfs dentry that has
 // been copied up to the upper layer.
 func IsCopiedUp(d *vfs.Dentry) bool {
