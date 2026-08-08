@@ -49,24 +49,4 @@ from numpy.linalg import LinAlgError  # NOQA
 
 
 __all__ = [
-    "matrix_power",
-    "cholesky",
-    "qr",
-    "svd",
-    "eigh",
-    "eig",
-    "eigvalsh",
-    "eigvals",
-    "norm",
-    "cond",
-    "det",
-    "matrix_rank",
-    "slogdet",
-    "solve",
-    "tensorsolve",
-    "inv",
-    "pinv",
-    "tensorinv",
-    "LinAlgError",
-    "cho_solve",
-]
+    "inv", "svd", "matrix_power", "matrix_rank", "norm", "LinAlgError", "solve", "cho_solve", "pinv", "tensorsolve", "tensorinv", "det", "qr", "eig", "cond", "slogdet", "eigvalsh", "eigh", "cholesky", "eigvals", ]
