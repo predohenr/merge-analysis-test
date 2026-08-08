@@ -1270,46 +1270,6 @@ resource "aws_ecs_capacity_provider" "test" {
 `, rName, monitoring))
 }
 
-func testAccCapacityProviderConfig_managedInstancesProvider_withLocalStorageConfiguration(rName string) string {
-	return acctest.ConfigCompose(testAccCapacityProviderConfig_managedInstancesProvider_base(rName), fmt.Sprintf(`
-resource "aws_ecs_capacity_provider" "test" {
-  name    = %[1]q
-  cluster = aws_ecs_cluster.test.name
-
-  managed_instances_provider {
-    infrastructure_role_arn = aws_iam_role.test.arn
-
-    instance_launch_template {
-      ec2_instance_profile_arn = aws_iam_instance_profile.test.arn
-
-      network_configuration {
-        subnets         = aws_subnet.test[*].id
-        security_groups = [aws_security_group.test.id]
-      }
-
-      local_storage_configuration {
-        use_local_storage = true
-      }
-    }
-  }
-}
-`, rName))
-}
-
-func testAccAssociateCapacityProviderWithCluster(ctx context.Context, t *testing.T, clusterName, cpName string) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		conn := acctest.ProviderMeta(ctx, t).ECSClient(ctx)
-
-		_, err := conn.PutClusterCapacityProviders(ctx, &ecs.PutClusterCapacityProvidersInput{
-			Cluster:                         &clusterName,
-			CapacityProviders:               []string{cpName},
-			DefaultCapacityProviderStrategy: []awstypes.CapacityProviderStrategyItem{},
-		})
-
-		return err
-	}
-}
-
 func testAccCapacityProviderConfig_withClusterNoAssociation(rName string) string {
 	return acctest.ConfigCompose(testAccCapacityProviderConfig_base(rName), fmt.Sprintf(`
 resource "aws_ecs_cluster" "test" {
@@ -1334,6 +1294,20 @@ resource "aws_ecs_cluster" "test" {
 `, rName))
 }
 
+func testAccAssociateCapacityProviderWithCluster(ctx context.Context, t *testing.T, clusterName, cpName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		conn := acctest.ProviderMeta(ctx, t).ECSClient(ctx)
+
+		_, err := conn.PutClusterCapacityProviders(ctx, &ecs.PutClusterCapacityProvidersInput{
+			Cluster:                         &clusterName,
+			CapacityProviders:               []string{cpName},
+			DefaultCapacityProviderStrategy: []awstypes.CapacityProviderStrategyItem{},
+		})
+
+		return err
+	}
+}
+
 func testAccCapacityProviderConfig_withClusterAssociation(rName string) string {
 	return acctest.ConfigCompose(testAccCapacityProviderConfig_base(rName), fmt.Sprintf(`
 resource "aws_ecs_cluster" "test" {
@@ -1351,6 +1325,32 @@ resource "aws_ecs_capacity_provider" "test" {
 resource "aws_ecs_cluster_capacity_providers" "test" {
   cluster_name       = aws_ecs_cluster.test.name
   capacity_providers = [aws_ecs_capacity_provider.test.name]
+}
+`, rName))
+}
+
+func testAccCapacityProviderConfig_managedInstancesProvider_withLocalStorageConfiguration(rName string) string {
+	return acctest.ConfigCompose(testAccCapacityProviderConfig_managedInstancesProvider_base(rName), fmt.Sprintf(`
+resource "aws_ecs_capacity_provider" "test" {
+  name    = %[1]q
+  cluster = aws_ecs_cluster.test.name
+
+  managed_instances_provider {
+    infrastructure_role_arn = aws_iam_role.test.arn
+
+    instance_launch_template {
+      ec2_instance_profile_arn = aws_iam_instance_profile.test.arn
+
+      network_configuration {
+        subnets         = aws_subnet.test[*].id
+        security_groups = [aws_security_group.test.id]
+      }
+
+      local_storage_configuration {
+        use_local_storage = true
+      }
+    }
+  }
 }
 `, rName))
 }
