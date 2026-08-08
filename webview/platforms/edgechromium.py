@@ -306,6 +306,9 @@ class EdgeChrome:
         response = Response(str(args.Request.Uri), args.Response.StatusCode, headers)
         self.pywebview_window.events.response_received.set(response)
 
+    def on_navigation_start(self, sender, args):
+        pass
+
     def on_web_resource_request(self, sender, args):
         original_headers = {}
         for header in args.Request.Headers.GetEnumerator():
