@@ -762,16 +762,12 @@ class BufferPrimitiveCollection {
   get boundingVolume() {
     return this._boundingVolume;
   }
-
-  /**
-   * The component datatype used to store position values.
-   * @type {ComponentDatatype}
-   * @readonly
-   */
   get positionDatatype() {
     return this._positionDatatype;
   }
-
+  get positionNormalized() {
+    return this._positionNormalized;
+  }
   /**
    * When <code>true</code>, integer position values are treated as normalized
    * values, where the full integer range maps to [-1, 1] (signed) or [0, 1]
@@ -779,9 +775,11 @@ class BufferPrimitiveCollection {
    * @type {boolean}
    * @readonly
    */
-  get positionNormalized() {
-    return this._positionNormalized;
-  }
+  /**
+   * The component datatype used to store position values.
+   * @type {ComponentDatatype}
+   * @readonly
+   */
 
   /////////////////////////////////////////////////////////////////////////////
   // UTILS
