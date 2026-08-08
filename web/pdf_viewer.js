@@ -212,67 +212,45 @@ class PDFPageViewBuffer {
  * Simple viewer control to display PDF content/pages.
  */
 class PDFViewer {
-  #buffer = null;
+  #buffer = null
 
-  #altTextManager = null;
-
-  #annotationEditorHighlightColors = null;
-
-  #annotationEditorMode = AnnotationEditorType.NONE;
-
-  #annotationEditorUIManager = null;
-
-  #annotationMode = AnnotationMode.ENABLE_FORMS;
-
-  #containerTopLeft = null;
-
-  #editorUndoBar = null;
-
-  #enableHWA = false;
-
-  #enableHighlightFloatingButton = false;
-
-  #enablePermissions = false;
-
-  #enableUpdatedAddImage = false;
-
-  #enableNewAltTextWhenAddingImage = false;
-
-  #enableAutoLinking = true;
-
-  #eventAbortController = null;
-
-  #mlManager = null;
-
-  #scrollTimeoutId = null;
-
-  #switchAnnotationEditorModeAC = null;
-
-  #switchAnnotationEditorModeTimeoutId = null;
-
-  #getAllTextInProgress = false;
-
-  #hiddenCopyElement = null;
-
-  #interruptCopyCondition = false;
-
-  #previousContainerHeight = 0;
-
-  #resizeObserver = new ResizeObserver(this.#resizeObserverCallback.bind(this));
-
-  #scrollModePageState = null;
-
-  #scaleTimeoutId = null;
-
-  #signatureManager = null;
-
-  #supportsPinchToZoom = true;
-
-  #textLayerMode = TextLayerMode.ENABLE;
+  get isHorizontalScrollbarEnabled() {
+    return this.isInPresentationMode
+      ? false
+      : this.container.scrollWidth > this.container.clientWidth;
+  }
 
   /**
-   * @param {PDFViewerOptions} options
+   * @param {Promise<OptionalContentConfig>} promise - A promise that is
+   *   resolved with an {@link OptionalContentConfig} instance.
    */
+
+;
+
+  get currentScaleValue() {
+    return this._currentScaleValue;
+  }
+  set currentScaleValue(val) {
+    if (!this.pdfDocument) {
+      return;
+    }
+    this.#setScale(val, { noScroll: false });
+  }
+
+;
+
+  get isVerticalScrollbarEnabled() {
+    return this.isInPresentationMode
+      ? false
+      : this.container.scrollHeight > this.container.clientHeight;
+  }
+
+  #scrollModePageState = null
+
+  get isChangingPresentationMode() {
+    return this.presentationModeState === PresentationModeState.CHANGING;
+  }
+
   constructor(options) {
     const viewerVersion =
       typeof PDFJSDev !== "undefined" ? PDFJSDev.eval("BUNDLE_VERSION") : null;
@@ -399,172 +377,70 @@ class PDFViewer {
     }
   }
 
-  get pagesCount() {
-    return this._pages.length;
+;
+
+;
+
+;
+
+;
+
+  focus() {
+    this.container.focus();
   }
 
-  getPageView(index) {
-    return this._pages[index];
+  cleanup() {
+    for (const pageView of this._pages) {
+      if (pageView.renderingState !== RenderingStates.FINISHED) {
+        pageView.reset();
+      }
+    }
   }
 
-  getCachedPageViews() {
-    return new Set(this.#buffer);
-  }
-
-  /**
-   * @type {boolean} - True if all {PDFPageView} objects are initialized.
-   */
-  get pageViewsReady() {
-    // Prevent printing errors when 'disableAutoFetch' is set, by ensuring
-    // that *all* pages have in fact been completely loaded.
-    return this._pages.every(pageView => pageView?.pdfPage);
-  }
-
-  /**
-   * @type {boolean}
-   */
-  get renderForms() {
-    return this.#annotationMode === AnnotationMode.ENABLE_FORMS;
-  }
-
-  /**
-   * @type {boolean}
-   */
-  get enableScripting() {
-    return !!this._scriptingManager;
-  }
-
-  /**
-   * @type {number}
-   */
-  get currentPageNumber() {
-    return this._currentPageNumber;
-  }
-
-  /**
-   * @param {number} val - The page number.
-   */
-  set currentPageNumber(val) {
-    if (!Number.isInteger(val)) {
-      throw new Error("Invalid page number.");
+  set optionalContentConfigPromise(promise) {
+    if (!(promise instanceof Promise)) {
+      throw new Error(`Invalid optionalContentConfigPromise: ${promise}`);
     }
     if (!this.pdfDocument) {
       return;
     }
-    // The intent can be to just reset a scroll position and/or scale.
-    if (!this._setCurrentPageNumber(val, /* resetCurrentPageView = */ true)) {
-      console.error(`currentPageNumber: "${val}" is not a valid page.`);
+    if (!this._optionalContentConfigPromise) {
+      // Ignore the setter *before* the `onePageRendered` promise has resolved,
+      // since it'll be overwritten anyway; won't happen in the default viewer.
+      return;
     }
-  }
+    this._optionalContentConfigPromise = promise;
 
-  /**
-   * @returns {boolean} Whether the pageNumber is valid (within bounds).
-   * @private
-   */
-  _setCurrentPageNumber(val, resetCurrentPageView = false) {
-    if (this._currentPageNumber === val) {
-      if (resetCurrentPageView) {
-        this.#resetCurrentPageView();
-      }
-      return true;
-    }
+    this.refresh(false, { optionalContentConfigPromise: promise });
 
-    if (!(0 < val && val <= this.pagesCount)) {
-      return false;
-    }
-    const previous = this._currentPageNumber;
-    this._currentPageNumber = val;
-
-    this.eventBus.dispatch("pagechanging", {
+    this.eventBus.dispatch("optionalcontentconfigchanged", {
       source: this,
-      pageNumber: val,
-      pageLabel: this._pageLabels?.[val - 1] ?? null,
-      previous,
+      promise,
     });
-
-    if (resetCurrentPageView) {
-      this.#resetCurrentPageView();
-    }
-    return true;
   }
-
-  /**
-   * @type {string|null} Returns the current page label, or `null` if no page
-   *   labels exist.
-   */
-  get currentPageLabel() {
-    return this._pageLabels?.[this._currentPageNumber - 1] ?? null;
-  }
-
-  /**
-   * @param {string} val - The page label.
-   */
-  set currentPageLabel(val) {
+  get optionalContentConfigPromise() {
     if (!this.pdfDocument) {
-      return;
+      return Promise.resolve(null);
     }
-    let page = val | 0; // Fallback page number.
-    if (this._pageLabels) {
-      const i = this._pageLabels.indexOf(val);
-      if (i >= 0) {
-        page = i + 1;
-      }
+    if (!this._optionalContentConfigPromise) {
+      console.error("optionalContentConfigPromise: Not initialized yet.");
+      // Prevent issues if the getter is accessed *before* the `onePageRendered`
+      // promise has resolved; won't (normally) happen in the default viewer.
+      return this.pdfDocument.getOptionalContentConfig({ intent: "display" });
     }
-    // The intent can be to just reset a scroll position and/or scale.
-    if (!this._setCurrentPageNumber(page, /* resetCurrentPageView = */ true)) {
-      console.error(`currentPageLabel: "${val}" is not a valid page.`);
-    }
+    return this._optionalContentConfigPromise;
   }
 
-  /**
-   * @type {number}
-   */
-  get currentScale() {
-    return this._currentScale !== UNKNOWN_SCALE
-      ? this._currentScale
-      : DEFAULT_SCALE;
-  }
-
-  /**
-   * @param {number} val - Scale of the pages in percents.
-   */
-  set currentScale(val) {
-    if (isNaN(val)) {
-      throw new Error("Invalid numeric scale.");
-    }
-    if (!this.pdfDocument) {
-      return;
-    }
-    this.#setScale(val, { noScroll: false });
-  }
+;
 
   /**
    * @type {string}
    */
-  get currentScaleValue() {
-    return this._currentScaleValue;
-  }
 
-  /**
-   * @param val - The scale of the pages (in percent or predefined value).
-   */
-  set currentScaleValue(val) {
-    if (!this.pdfDocument) {
-      return;
-    }
-    this.#setScale(val, { noScroll: false });
-  }
+;
 
-  /**
-   * @type {number}
-   */
-  get pagesRotation() {
-    return this._pagesRotation;
-  }
+  #scaleTimeoutId = null
 
-  /**
-   * @param {number} rotation - The rotation of the pages (0, 90, 180, 270).
-   */
   set pagesRotation(rotation) {
     if (!isValidRotation(rotation)) {
       throw new Error("Invalid pages rotation angle.");
@@ -602,53 +478,243 @@ class PDFViewer {
       this.update();
     }
   }
-
-  get firstPagePromise() {
-    return this.pdfDocument ? this._firstPageCapability.promise : null;
+  get pagesRotation() {
+    return this._pagesRotation;
   }
 
-  get onePageRendered() {
-    return this.pdfDocument ? this._onePageRenderedCapability.promise : null;
+;
+
+  #resetCurrentPageView() {
+    const pageView = this._pages[this._currentPageNumber - 1];
+
+    if (this.isInPresentationMode) {
+      // Fixes the case when PDF has different page sizes.
+      this.#setScale(this._currentScaleValue, { noScroll: true });
+    }
+    this.#scrollIntoView(pageView);
   }
 
-  get pagesPromise() {
-    return this.pdfDocument ? this._pagesCapability.promise : null;
-  }
+  #annotationEditorMode = AnnotationEditorType.NONE
 
-  get _layerProperties() {
-    const self = this;
-    return shadow(this, "_layerProperties", {
-      get annotationEditorUIManager() {
-        return self.#annotationEditorUIManager;
-      },
-      get annotationStorage() {
-        return self.pdfDocument?.annotationStorage;
-      },
-      get downloadManager() {
-        return self.downloadManager;
-      },
-      get enableScripting() {
-        return !!self._scriptingManager;
-      },
-      get fieldObjectsPromise() {
-        return self.pdfDocument?.getFieldObjects();
-      },
-      get findController() {
-        return self.findController;
-      },
-      get hasJSActionsPromise() {
-        return self.pdfDocument?.hasJSActions();
-      },
-      get linkService() {
-        return self.linkService;
-      },
-    });
+;
+
+  scrollPageIntoView({
+    pageNumber,
+    destArray = null,
+    allowNegativeOffset = false,
+    ignoreDestinationZoom = false,
+  }) {
+    if (!this.pdfDocument) {
+      return;
+    }
+    const pageView =
+      Number.isInteger(pageNumber) && this._pages[pageNumber - 1];
+    if (!pageView) {
+      console.error(
+        `scrollPageIntoView: "${pageNumber}" is not a valid pageNumber parameter.`
+      );
+      return;
+    }
+
+    if (this.isInPresentationMode || !destArray) {
+      this._setCurrentPageNumber(pageNumber, /* resetCurrentPageView = */ true);
+      return;
+    }
+    let x = 0,
+      y = 0;
+    let width = 0,
+      height = 0,
+      widthScale,
+      heightScale;
+    const changeOrientation = pageView.rotation % 180 !== 0;
+    const pageWidth =
+      (changeOrientation ? pageView.height : pageView.width) /
+      pageView.scale /
+      PixelsPerInch.PDF_TO_CSS_UNITS;
+    const pageHeight =
+      (changeOrientation ? pageView.width : pageView.height) /
+      pageView.scale /
+      PixelsPerInch.PDF_TO_CSS_UNITS;
+    let scale = 0;
+    switch (destArray[1].name) {
+      case "XYZ":
+        x = destArray[2];
+        y = destArray[3];
+        scale = destArray[4];
+        // If x and/or y coordinates are not supplied, default to
+        // _top_ left of the page (not the obvious bottom left,
+        // since aligning the bottom of the intended page with the
+        // top of the window is rarely helpful).
+        x = x !== null ? x : 0;
+        y = y !== null ? y : pageHeight;
+        break;
+      case "Fit":
+      case "FitB":
+        scale = "page-fit";
+        break;
+      case "FitH":
+      case "FitBH":
+        y = destArray[2];
+        scale = "page-width";
+        // According to the PDF spec, section 12.3.2.2, a `null` value in the
+        // parameter should maintain the position relative to the new page.
+        if (y === null && this._location) {
+          x = this._location.left;
+          y = this._location.top;
+        } else if (typeof y !== "number" || y < 0) {
+          // The "top" value isn't optional, according to the spec, however some
+          // bad PDF generators will pretend that it is (fixes bug 1663390).
+          y = pageHeight;
+        }
+        break;
+      case "FitV":
+      case "FitBV":
+        x = destArray[2];
+        width = pageWidth;
+        height = pageHeight;
+        scale = "page-height";
+        break;
+      case "FitR":
+        x = destArray[2];
+        y = destArray[3];
+        width = destArray[4] - x;
+        height = destArray[5] - y;
+        let hPadding = SCROLLBAR_PADDING,
+          vPadding = VERTICAL_PADDING;
+
+        if (
+          (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) &&
+          this.removePageBorders
+        ) {
+          hPadding = vPadding = 0;
+        }
+        widthScale =
+          (this.container.clientWidth - hPadding) /
+          width /
+          PixelsPerInch.PDF_TO_CSS_UNITS;
+        heightScale =
+          (this.container.clientHeight - vPadding) /
+          height /
+          PixelsPerInch.PDF_TO_CSS_UNITS;
+        scale = Math.min(Math.abs(widthScale), Math.abs(heightScale));
+        break;
+      default:
+        console.error(
+          `scrollPageIntoView: "${destArray[1].name}" is not a valid destination type.`
+        );
+        return;
+    }
+
+    if (!ignoreDestinationZoom) {
+      if (scale && scale !== this._currentScale) {
+        this.currentScaleValue = scale;
+      } else if (this._currentScale === UNKNOWN_SCALE) {
+        this.currentScaleValue = DEFAULT_SCALE_VALUE;
+      }
+    }
+
+    if (scale === "page-fit" && !destArray[4]) {
+      this.#scrollIntoView(pageView);
+      return;
+    }
+
+    const boundingRect = [
+      pageView.viewport.convertToViewportPoint(x, y),
+      pageView.viewport.convertToViewportPoint(x + width, y + height),
+    ];
+    let left = Math.min(boundingRect[0][0], boundingRect[1][0]);
+    let top = Math.min(boundingRect[0][1], boundingRect[1][1]);
+
+    if (!allowNegativeOffset) {
+      // Some bad PDF generators will create destinations with e.g. top values
+      // that exceeds the page height. Ensure that offsets are not negative,
+      // to prevent a previous page from becoming visible (fixes bug 874482).
+      left = Math.max(left, 0);
+      top = Math.max(top, 0);
+    }
+    this.#scrollIntoView(pageView, /* pageSpot = */ { left, top });
   }
 
   /**
-   * Currently only *some* permissions are supported.
-   * @returns {Object}
+   * @type {number}
    */
+
+;
+
+  /**
+   * @param {PDFDocumentProxy} pdfDocument
+   */
+
+;
+
+  _setCurrentPageNumber(val, resetCurrentPageView = false) {
+    if (this._currentPageNumber === val) {
+      if (resetCurrentPageView) {
+        this.#resetCurrentPageView();
+      }
+      return true;
+    }
+
+    if (!(0 < val && val <= this.pagesCount)) {
+      return false;
+    }
+    const previous = this._currentPageNumber;
+    this._currentPageNumber = val;
+
+    this.eventBus.dispatch("pagechanging", {
+      source: this,
+      pageNumber: val,
+      pageLabel: this._pageLabels?.[val - 1] ?? null,
+      previous,
+    });
+
+    if (resetCurrentPageView) {
+      this.#resetCurrentPageView();
+    }
+    return true;
+  }
+
+  containsElement(element) {
+    return this.container.contains(element);
+  }
+
+;
+
+  #signatureManager = null
+
+;
+
+  #previousContainerHeight = 0
+
+  set spreadMode(mode) {
+    if (
+      typeof PDFJSDev === "undefined"
+        ? window.isGECKOVIEW
+        : PDFJSDev.test("GECKOVIEW")
+    ) {
+      // NOTE: Always ignore the pageLayout in GeckoView since there's
+      // no UI available to change Scroll/Spread modes for the user.
+      return;
+    }
+    if (this._spreadMode === mode) {
+      return; // The Spread mode didn't change.
+    }
+    if (!isValidSpreadMode(mode)) {
+      throw new Error(`Invalid spread mode: ${mode}`);
+    }
+    this._spreadMode = mode;
+    this.eventBus.dispatch("spreadmodechanged", { source: this, mode });
+
+    this._updateSpreadMode(/* pageNumber = */ this._currentPageNumber);
+  }
+  get spreadMode() {
+    return this._spreadMode;
+  }
+
+  /**
+   * @param {PDFViewerOptions} options
+   */
+
   #initializePermissions(permissions) {
     const params = {
       annotationEditorMode: this.#annotationEditorMode,
@@ -681,44 +747,71 @@ class PDFViewer {
     return params;
   }
 
-  async #onePageRenderedOrForceFetch(signal) {
-    // Unless the viewer *and* its pages are visible, rendering won't start and
-    // `this._onePageRenderedCapability` thus won't be resolved.
-    // To ensure that automatic printing, on document load, still works even in
-    // those cases we force-allow fetching of all pages when:
-    //  - The current window/tab is inactive, which will prevent rendering since
-    //    `requestAnimationFrame` is being used; fixes bug 1746213.
-    //  - The viewer is hidden in the DOM, e.g. in a `display: none` <iframe>
-    //    element; fixes bug 1618621.
-    //  - The viewer is visible, but none of the pages are (e.g. if the
-    //    viewer is very small); fixes bug 1618955.
-    if (
-      document.visibilityState === "hidden" ||
-      !this.container.offsetParent ||
-      this._getVisiblePages().views.length === 0
-    ) {
-      return;
-    }
+;
 
-    // Handle the window/tab becoming inactive *after* rendering has started;
-    // fixes (another part of) bug 1746213.
-    const hiddenCapability = Promise.withResolvers(),
-      ac = new AbortController();
-    document.addEventListener(
-      "visibilitychange",
-      () => {
-        if (document.visibilityState === "hidden") {
-          hiddenCapability.resolve();
-        }
-      },
-      { signal: AbortSignal.any([signal, ac.signal]) }
+  get onePageRendered() {
+    return this.pdfDocument ? this._onePageRenderedCapability.promise : null;
+  }
+
+  #containerTopLeft = null
+
+;
+
+  /**
+   * @private
+   */
+
+  #editorUndoBar = null
+
+  #resizeObserver = new ResizeObserver(this.#resizeObserverCallback.bind(this))
+
+  forceRendering(currentlyVisiblePages) {
+    const visiblePages = currentlyVisiblePages || this._getVisiblePages();
+    const scrollAhead = this.#getScrollAhead(visiblePages);
+    const preRenderExtra =
+      this._spreadMode !== SpreadMode.NONE &&
+      this._scrollMode !== ScrollMode.HORIZONTAL;
+
+    const ignoreDetailViews =
+      // If we are zooming, do not re-render the detail views. Re-renders on
+      // zoom happen with a delay, and once the rendering happens it will also
+      // trigger rendering of the detail views.
+      this.#scaleTimeoutId !== null ||
+      // If we are scrolling and the rendering of a detail view was just
+      // cancelled, it's because the user is scrolling too quickly and so
+      // we constantly need to re-render a different area.
+      // Don't attempt to re-render it: this will be done once the user
+      // stops scrolling.
+      (this.#scrollTimeoutId !== null &&
+        visiblePages.views.some(page => page.detailView?.renderingCancelled));
+
+    const pageView = this.renderingQueue.getHighestPriority(
+      visiblePages,
+      this._pages,
+      scrollAhead,
+      preRenderExtra,
+      ignoreDetailViews
     );
 
-    await Promise.race([
-      this._onePageRenderedCapability.promise,
-      hiddenCapability.promise,
-    ]);
-    ac.abort(); // Remove the "visibilitychange" listener immediately.
+    if (pageView) {
+      this.#ensurePdfPageLoaded(pageView).then(() => {
+        this.renderingQueue.renderView(pageView);
+      });
+      return true;
+    }
+    return false;
+  }
+
+  get _isContainerRtl() {
+    return getComputedStyle(this.container).direction === "rtl";
+  }
+
+  /**
+   * @type {boolean}
+   */
+
+  get enableScripting() {
+    return !!this._scriptingManager;
   }
 
   async getAllText() {
@@ -751,70 +844,313 @@ class PDFViewer {
     return texts.join("\n");
   }
 
-  #copyCallback(textLayerMode, event) {
-    const selection = document.getSelection();
-    const { focusNode, anchorNode } = selection;
-    if (
-      anchorNode &&
-      focusNode &&
-      selection.containsNode(this.#hiddenCopyElement)
-    ) {
-      // About the condition above:
-      //  - having non-null anchorNode and focusNode are here to guaranty that
-      //    we have at least a kind of selection.
-      //  - this.#hiddenCopyElement is an invisible element which is impossible
-      //    to select manually (its display is none) but ctrl+A will select all
-      //    including this element so having it in the selection means that all
-      //    has been selected.
+  get _layerProperties() {
+    const self = this;
+    return shadow(this, "_layerProperties", {
+      get annotationEditorUIManager() {
+        return self.#annotationEditorUIManager;
+      },
+      get annotationStorage() {
+        return self.pdfDocument?.annotationStorage;
+      },
+      get downloadManager() {
+        return self.downloadManager;
+      },
+      get enableScripting() {
+        return !!self._scriptingManager;
+      },
+      get fieldObjectsPromise() {
+        return self.pdfDocument?.getFieldObjects();
+      },
+      get findController() {
+        return self.findController;
+      },
+      get hasJSActionsPromise() {
+        return self.pdfDocument?.hasJSActions();
+      },
+      get linkService() {
+        return self.linkService;
+      },
+    });
+  }
 
+;
+
+  set currentPageNumber(val) {
+    if (!Number.isInteger(val)) {
+      throw new Error("Invalid page number.");
+    }
+    if (!this.pdfDocument) {
+      return;
+    }
+    // The intent can be to just reset a scroll position and/or scale.
+    if (!this._setCurrentPageNumber(val, /* resetCurrentPageView = */ true)) {
+      console.error(`currentPageNumber: "${val}" is not a valid page.`);
+    }
+  }
+  get currentPageNumber() {
+    return this._currentPageNumber;
+  }
+
+  #enableUpdatedAddImage = false
+
+;
+
+;
+
+  get pagesPromise() {
+    return this.pdfDocument ? this._pagesCapability.promise : null;
+  }
+
+  /**
+   * @param {number} rotation - The rotation of the pages (0, 90, 180, 270).
+   */
+
+  get pageViewsReady() {
+    // Prevent printing errors when 'disableAutoFetch' is set, by ensuring
+    // that *all* pages have in fact been completely loaded.
+    return this._pages.every(pageView => pageView?.pdfPage);
+  }
+
+  #scrollIntoView(pageView, pageSpot = null) {
+    const { div, id } = pageView;
+
+    // Ensure that `this._currentPageNumber` is correct, when `#scrollIntoView`
+    // is called directly (and not from `#resetCurrentPageView`).
+    if (this._currentPageNumber !== id) {
+      this._setCurrentPageNumber(id);
+    }
+    if (this._scrollMode === ScrollMode.PAGE) {
+      this.#ensurePageViewVisible();
+      // Ensure that rendering always occurs, to avoid showing a blank page,
+      // even if the current position doesn't change when the page is scrolled.
+      this.update();
+    }
+
+    if (!pageSpot && !this.isInPresentationMode) {
+      const left = div.offsetLeft + div.clientLeft,
+        right = left + div.clientWidth;
+      const { scrollLeft, clientWidth } = this.container;
       if (
-        this.#getAllTextInProgress ||
-        textLayerMode === TextLayerMode.ENABLE_PERMISSIONS
+        this._scrollMode === ScrollMode.HORIZONTAL ||
+        left < scrollLeft ||
+        right > scrollLeft + clientWidth
       ) {
-        stopEvent(event);
-        return;
+        pageSpot = { left: 0, top: 0 };
       }
-      this.#getAllTextInProgress = true;
+    }
+    scrollIntoView(div, pageSpot);
 
-      // TODO: if all the pages are rendered we don't need to wait for
-      // getAllText and we could just get text from the Selection object.
-
-      // Select all the document.
-      const { classList } = this.viewer;
-      classList.add("copyAll");
-
-      const ac = new AbortController();
-      window.addEventListener(
-        "keydown",
-        ev => (this.#interruptCopyCondition = ev.key === "Escape"),
-        { signal: ac.signal }
-      );
-
-      this.getAllText()
-        .then(async text => {
-          if (text !== null) {
-            await navigator.clipboard.writeText(text);
-          }
-        })
-        .catch(reason => {
-          console.warn(
-            `Something goes wrong when extracting the text: ${reason.message}`
-          );
-        })
-        .finally(() => {
-          this.#getAllTextInProgress = false;
-          this.#interruptCopyCondition = false;
-          ac.abort();
-          classList.remove("copyAll");
-        });
-
-      stopEvent(event);
+    // Ensure that the correct *initial* document position is set, when any
+    // OpenParameters are used, for documents with non-default Scroll/Spread
+    // modes (fixes issue 15695). This is necessary since the scroll-handler
+    // invokes the `update`-method asynchronously, and `this._location` could
+    // thus be wrong when the initial zooming occurs in the default viewer.
+    if (!this._currentScaleValue && this._location) {
+      this._location = null;
     }
   }
 
   /**
-   * @param {PDFDocumentProxy} pdfDocument
+   * Currently only *some* permissions are supported.
+   * @returns {Object}
    */
+
+  set currentPageLabel(val) {
+    if (!this.pdfDocument) {
+      return;
+    }
+    let page = val | 0; // Fallback page number.
+    if (this._pageLabels) {
+      const i = this._pageLabels.indexOf(val);
+      if (i >= 0) {
+        page = i + 1;
+      }
+    }
+    // The intent can be to just reset a scroll position and/or scale.
+    if (!this._setCurrentPageNumber(page, /* resetCurrentPageView = */ true)) {
+      console.error(`currentPageLabel: "${val}" is not a valid page.`);
+    }
+  }
+  get currentPageLabel() {
+    return this._pageLabels?.[this._currentPageNumber - 1] ?? null;
+  }
+
+;
+
+;
+
+;
+
+  #enableAutoLinking = true
+
+  #switchToEditAnnotationMode() {
+    const visible = this._getVisiblePages();
+    const pagesToRefresh = [];
+    const { ids, views } = visible;
+    for (const page of views) {
+      const { view } = page;
+      if (!view.hasEditableAnnotations()) {
+        ids.delete(view.id);
+        continue;
+      }
+      pagesToRefresh.push(page);
+    }
+
+    if (pagesToRefresh.length === 0) {
+      return null;
+    }
+    this.renderingQueue.renderHighestPriority({
+      first: pagesToRefresh[0],
+      last: pagesToRefresh.at(-1),
+      views: pagesToRefresh,
+      ids,
+    });
+
+    return ids;
+  }
+
+  /**
+   * @type {number}
+   */
+
+  /**
+   * @param val - The scale of the pages (in percent or predefined value).
+   */
+
+  /**
+   * Prevent unnecessary re-rendering of all pages when the scale changes
+   * only because of limited numerical precision.
+   */
+
+  _getVisiblePages() {
+    const views =
+        this._scrollMode === ScrollMode.PAGE
+          ? this.#scrollModePageState.pages
+          : this._pages,
+      horizontal = this._scrollMode === ScrollMode.HORIZONTAL,
+      rtl = horizontal && this._isContainerRtl;
+
+    return getVisibleElements({
+      scrollEl: this.container,
+      views,
+      sortByVisibility: true,
+      horizontal,
+      rtl,
+    });
+  }
+
+;
+
+  #interruptCopyCondition = false
+
+  /**
+   * @param {number} mode - Group the pages in spreads, starting with odd- or
+   *   even-number pages (unless `SpreadMode.NONE` is used).
+   *   The constants from {SpreadMode} should be used.
+   */
+
+;
+
+;
+
+;
+
+;
+
+  #supportsPinchToZoom = true
+
+  #scrollTimeoutId = null
+
+  #setScale(value, options) {
+    let scale = parseFloat(value);
+
+    if (scale > 0) {
+      options.preset = false;
+      this.#setScaleUpdatePages(scale, value, options);
+    } else {
+      const currentPage = this._pages[this._currentPageNumber - 1];
+      if (!currentPage) {
+        return;
+      }
+      let hPadding = SCROLLBAR_PADDING,
+        vPadding = VERTICAL_PADDING;
+
+      if (this.isInPresentationMode) {
+        // Pages have a 2px (transparent) border in PresentationMode, see
+        // the `web/pdf_viewer.css` file.
+        hPadding = vPadding = 4; // 2 * 2px
+        if (this._spreadMode !== SpreadMode.NONE) {
+          // Account for two pages being visible in PresentationMode, thus
+          // "doubling" the total border width.
+          hPadding *= 2;
+        }
+      } else if (
+        (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) &&
+        this.removePageBorders
+      ) {
+        hPadding = vPadding = 0;
+      } else if (this._scrollMode === ScrollMode.HORIZONTAL) {
+        [hPadding, vPadding] = [vPadding, hPadding]; // Swap the padding values.
+      }
+      const pageWidthScale =
+        (((this.container.clientWidth - hPadding) / currentPage.width) *
+          currentPage.scale) /
+        this.#pageWidthScaleFactor;
+      const pageHeightScale =
+        ((this.container.clientHeight - vPadding) / currentPage.height) *
+        currentPage.scale;
+      switch (value) {
+        case "page-actual":
+          scale = 1;
+          break;
+        case "page-width":
+          scale = pageWidthScale;
+          break;
+        case "page-height":
+          scale = pageHeightScale;
+          break;
+        case "page-fit":
+          scale = Math.min(pageWidthScale, pageHeightScale);
+          break;
+        case "auto":
+          // For pages in landscape mode, fit the page height to the viewer
+          // *unless* the page would thus become too wide to fit horizontally.
+          const horizontalScale = isPortraitOrientation(currentPage)
+            ? pageWidthScale
+            : Math.min(pageHeightScale, pageWidthScale);
+          scale = Math.min(MAX_AUTO_SCALE, horizontalScale);
+          break;
+        default:
+          console.error(`#setScale: "${value}" is an unknown zoom value.`);
+          return;
+      }
+      options.preset = true;
+      this.#setScaleUpdatePages(scale, value, options);
+    }
+  }
+
+  _scrollUpdate() {
+    if (this.pagesCount === 0) {
+      return;
+    }
+
+    if (this.#scrollTimeoutId) {
+      clearTimeout(this.#scrollTimeoutId);
+    }
+    this.#scrollTimeoutId = setTimeout(() => {
+      this.#scrollTimeoutId = null;
+      this.update();
+    }, 100);
+
+    this.update();
+  }
+
+  /**
+   * @param {PDFPageView} pageView
+   * @returns {Promise<PDFPageProxy | null>}
+   */
+
   setDocument(pdfDocument) {
     if (this.pdfDocument) {
       this.eventBus.dispatch("pagesdestroy", { source: this });
@@ -1112,64 +1448,215 @@ class PDFViewer {
   /**
    * @param {Array|null} labels
    */
-  setPageLabels(labels) {
-    if (!this.pdfDocument) {
+
+  #textLayerMode = TextLayerMode.ENABLE
+
+  /**
+   * @type {string|null} Returns the current page label, or `null` if no page
+   *   labels exist.
+   */
+
+  update() {
+    const visible = this._getVisiblePages();
+    const visiblePages = visible.views,
+      numVisiblePages = visiblePages.length;
+
+    if (numVisiblePages === 0) {
       return;
     }
-    if (!labels) {
-      this._pageLabels = null;
-    } else if (
-      !(Array.isArray(labels) && this.pdfDocument.numPages === labels.length)
-    ) {
-      this._pageLabels = null;
-      console.error(`setPageLabels: Invalid page labels.`);
-    } else {
-      this._pageLabels = labels;
+    const newCacheSize = Math.max(DEFAULT_CACHE_SIZE, 2 * numVisiblePages + 1);
+    this.#buffer.resize(newCacheSize, visible.ids);
+
+    for (const { view, visibleArea } of visiblePages) {
+      view.updateVisibleArea(visibleArea);
     }
-    // Update all the `PDFPageView` instances.
-    for (let i = 0, ii = this._pages.length; i < ii; i++) {
-      this._pages[i].setPageLabel(this._pageLabels?.[i] ?? null);
+    for (const view of this.#buffer) {
+      if (!visible.ids.has(view.id)) {
+        view.updateVisibleArea(null);
+      }
+    }
+
+    this.renderingQueue.renderHighestPriority(visible);
+
+    const isSimpleLayout =
+      this._spreadMode === SpreadMode.NONE &&
+      (this._scrollMode === ScrollMode.PAGE ||
+        this._scrollMode === ScrollMode.VERTICAL);
+    const currentId = this._currentPageNumber;
+    let stillFullyVisible = false;
+
+    for (const page of visiblePages) {
+      if (page.percent < 100) {
+        break;
+      }
+      if (page.id === currentId && isSimpleLayout) {
+        stillFullyVisible = true;
+        break;
+      }
+    }
+    this._setCurrentPageNumber(
+      stillFullyVisible ? currentId : visiblePages[0].id
+    );
+
+    this._updateLocation(visible.first);
+    this.eventBus.dispatch("updateviewarea", {
+      source: this,
+      location: this._location,
+    });
+  }
+
+  #enableHWA = false
+
+  #copyCallback(textLayerMode, event) {
+    const selection = document.getSelection();
+    const { focusNode, anchorNode } = selection;
+    if (
+      anchorNode &&
+      focusNode &&
+      selection.containsNode(this.#hiddenCopyElement)
+    ) {
+      // About the condition above:
+      //  - having non-null anchorNode and focusNode are here to guaranty that
+      //    we have at least a kind of selection.
+      //  - this.#hiddenCopyElement is an invisible element which is impossible
+      //    to select manually (its display is none) but ctrl+A will select all
+      //    including this element so having it in the selection means that all
+      //    has been selected.
+
+      if (
+        this.#getAllTextInProgress ||
+        textLayerMode === TextLayerMode.ENABLE_PERMISSIONS
+      ) {
+        stopEvent(event);
+        return;
+      }
+      this.#getAllTextInProgress = true;
+
+      // TODO: if all the pages are rendered we don't need to wait for
+      // getAllText and we could just get text from the Selection object.
+
+      // Select all the document.
+      const { classList } = this.viewer;
+      classList.add("copyAll");
+
+      const ac = new AbortController();
+      window.addEventListener(
+        "keydown",
+        ev => (this.#interruptCopyCondition = ev.key === "Escape"),
+        { signal: ac.signal }
+      );
+
+      this.getAllText()
+        .then(async text => {
+          if (text !== null) {
+            await navigator.clipboard.writeText(text);
+          }
+        })
+        .catch(reason => {
+          console.warn(
+            `Something goes wrong when extracting the text: ${reason.message}`
+          );
+        })
+        .finally(() => {
+          this.#getAllTextInProgress = false;
+          this.#interruptCopyCondition = false;
+          ac.abort();
+          classList.remove("copyAll");
+        });
+
+      stopEvent(event);
     }
   }
 
-  _resetView() {
-    this._pages = [];
-    this._currentPageNumber = 1;
-    this._currentScale = UNKNOWN_SCALE;
-    this._currentScaleValue = null;
-    this._pageLabels = null;
-    this.#buffer = new PDFPageViewBuffer(DEFAULT_CACHE_SIZE);
-    this._location = null;
-    this._pagesRotation = 0;
-    this._optionalContentConfigPromise = null;
-    this._firstPageCapability = Promise.withResolvers();
-    this._onePageRenderedCapability = Promise.withResolvers();
-    this._pagesCapability = Promise.withResolvers();
-    this._scrollMode = ScrollMode.VERTICAL;
-    this._previousScrollMode = ScrollMode.UNKNOWN;
-    this._spreadMode = SpreadMode.NONE;
+  /**
+   * @type {boolean}
+   */
 
-    this.#scrollModePageState = {
-      previousPageNumber: 1,
-      scrollDown: true,
-      pages: [],
-    };
+;
 
-    this.#eventAbortController?.abort();
-    this.#eventAbortController = null;
+;
 
-    // Remove the pages from the DOM...
-    this.viewer.textContent = "";
-    // ... and reset the Scroll mode CSS class(es) afterwards.
-    this._updateScrollMode();
+  /**
+   * @type {number} One of the values in {SpreadMode}.
+   */
 
-    this.viewer.removeAttribute("lang");
+  /**
+   * @param {string} label - The page label.
+   * @returns {number|null} The page number corresponding to the page label,
+   *   or `null` when no page labels exist and/or the input is invalid.
+   */
 
-    this.#hiddenCopyElement?.remove();
-    this.#hiddenCopyElement = null;
+;
 
-    this.#cleanupTimeouts();
-    this.#cleanupSwitchAnnotationEditorMode();
+  get currentScale() {
+    return this._currentScale !== UNKNOWN_SCALE
+      ? this._currentScale
+      : DEFAULT_SCALE;
+  }
+  set currentScale(val) {
+    if (isNaN(val)) {
+      throw new Error("Invalid numeric scale.");
+    }
+    if (!this.pdfDocument) {
+      return;
+    }
+    this.#setScale(val, { noScroll: false });
+  }
+
+  getPageView(index) {
+    return this._pages[index];
+  }
+
+;
+
+  #isSameScale(newScale) {
+    return (
+      newScale === this._currentScale ||
+      Math.abs(newScale - this._currentScale) < 1e-15
+    );
+  }
+
+  /**
+   * @type {boolean}
+   */
+
+  #enableHighlightFloatingButton = false
+
+  /**
+   * Returns sizes of the pages.
+   * @returns {Array} Array of objects with width/height/rotation fields.
+   */
+
+  #annotationMode = AnnotationMode.ENABLE_FORMS
+
+  /**
+   * @type {number} One of the values in {ScrollMode}.
+   */
+
+  async #ensurePdfPageLoaded(pageView) {
+    if (pageView.pdfPage) {
+      return pageView.pdfPage;
+    }
+    try {
+      const pdfPage = await this.pdfDocument.getPage(pageView.id);
+      if (!pageView.pdfPage) {
+        pageView.setPdfPage(pdfPage);
+      }
+      return pdfPage;
+    } catch (reason) {
+      console.error("Unable to get page for page view", reason);
+      return null; // Page error -- there is nothing that can be done.
+    }
+  }
+
+  #switchAnnotationEditorModeTimeoutId = null
+
+  /**
+   * @type {number}
+   */
+
+  getCachedPageViews() {
+    return new Set(this.#buffer);
   }
 
   #ensurePageViewVisible() {
@@ -1235,71 +1722,83 @@ class PDFViewer {
     state.previousPageNumber = pageNumber;
   }
 
-  _scrollUpdate() {
-    if (this.pagesCount === 0) {
+;
+
+;
+
+;
+
+  /**
+   * @private
+   */
+
+;
+
+  #hiddenCopyElement = null
+
+  setPageLabels(labels) {
+    if (!this.pdfDocument) {
       return;
     }
-
-    if (this.#scrollTimeoutId) {
-      clearTimeout(this.#scrollTimeoutId);
+    if (!labels) {
+      this._pageLabels = null;
+    } else if (
+      !(Array.isArray(labels) && this.pdfDocument.numPages === labels.length)
+    ) {
+      this._pageLabels = null;
+      console.error(`setPageLabels: Invalid page labels.`);
+    } else {
+      this._pageLabels = labels;
     }
-    this.#scrollTimeoutId = setTimeout(() => {
-      this.#scrollTimeoutId = null;
-      this.update();
-    }, 100);
-
-    this.update();
+    // Update all the `PDFPageView` instances.
+    for (let i = 0, ii = this._pages.length; i < ii; i++) {
+      this._pages[i].setPageLabel(this._pageLabels?.[i] ?? null);
+    }
   }
 
-  #scrollIntoView(pageView, pageSpot = null) {
-    const { div, id } = pageView;
+;
 
-    // Ensure that `this._currentPageNumber` is correct, when `#scrollIntoView`
-    // is called directly (and not from `#resetCurrentPageView`).
-    if (this._currentPageNumber !== id) {
-      this._setCurrentPageNumber(id);
-    }
-    if (this._scrollMode === ScrollMode.PAGE) {
-      this.#ensurePageViewVisible();
-      // Ensure that rendering always occurs, to avoid showing a blank page,
-      // even if the current position doesn't change when the page is scrolled.
-      this.update();
-    }
+;
 
-    if (!pageSpot && !this.isInPresentationMode) {
-      const left = div.offsetLeft + div.clientLeft,
-        right = left + div.clientWidth;
-      const { scrollLeft, clientWidth } = this.container;
-      if (
-        this._scrollMode === ScrollMode.HORIZONTAL ||
-        left < scrollLeft ||
-        right > scrollLeft + clientWidth
-      ) {
-        pageSpot = { left: 0, top: 0 };
-      }
-    }
-    scrollIntoView(div, pageSpot);
+;
 
-    // Ensure that the correct *initial* document position is set, when any
-    // OpenParameters are used, for documents with non-default Scroll/Spread
-    // modes (fixes issue 15695). This is necessary since the scroll-handler
-    // invokes the `update`-method asynchronously, and `this._location` could
-    // thus be wrong when the initial zooming occurs in the default viewer.
-    if (!this._currentScaleValue && this._location) {
-      this._location = null;
+  /**
+   * @private
+   */
+
+  pageLabelToPageNumber(label) {
+    if (!this._pageLabels) {
+      return null;
     }
+    const i = this._pageLabels.indexOf(label);
+    if (i < 0) {
+      return null;
+    }
+    return i + 1;
   }
 
   /**
-   * Prevent unnecessary re-rendering of all pages when the scale changes
-   * only because of limited numerical precision.
+   * Scrolls page into view.
+   * @param {ScrollPageIntoViewParameters} params
    */
-  #isSameScale(newScale) {
-    return (
-      newScale === this._currentScale ||
-      Math.abs(newScale - this._currentScale) < 1e-15
-    );
+
+  get firstPagePromise() {
+    return this.pdfDocument ? this._firstPageCapability.promise : null;
   }
+
+  get renderForms() {
+    return this.#annotationMode === AnnotationMode.ENABLE_FORMS;
+  }
+
+  #annotationEditorHighlightColors = null
+
+;
+
+;
+
+  /**
+   * @type {boolean}
+   */
 
   #setScaleUpdatePages(
     newScale,
@@ -1383,515 +1882,10 @@ class PDFViewer {
     }
   }
 
-  get #pageWidthScaleFactor() {
-    if (
-      this._spreadMode !== SpreadMode.NONE &&
-      this._scrollMode !== ScrollMode.HORIZONTAL
-    ) {
-      return 2;
-    }
-    return 1;
-  }
+  #annotationEditorUIManager = null
 
-  #setScale(value, options) {
-    let scale = parseFloat(value);
+;
 
-    if (scale > 0) {
-      options.preset = false;
-      this.#setScaleUpdatePages(scale, value, options);
-    } else {
-      const currentPage = this._pages[this._currentPageNumber - 1];
-      if (!currentPage) {
-        return;
-      }
-      let hPadding = SCROLLBAR_PADDING,
-        vPadding = VERTICAL_PADDING;
-
-      if (this.isInPresentationMode) {
-        // Pages have a 2px (transparent) border in PresentationMode, see
-        // the `web/pdf_viewer.css` file.
-        hPadding = vPadding = 4; // 2 * 2px
-        if (this._spreadMode !== SpreadMode.NONE) {
-          // Account for two pages being visible in PresentationMode, thus
-          // "doubling" the total border width.
-          hPadding *= 2;
-        }
-      } else if (
-        (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) &&
-        this.removePageBorders
-      ) {
-        hPadding = vPadding = 0;
-      } else if (this._scrollMode === ScrollMode.HORIZONTAL) {
-        [hPadding, vPadding] = [vPadding, hPadding]; // Swap the padding values.
-      }
-      const pageWidthScale =
-        (((this.container.clientWidth - hPadding) / currentPage.width) *
-          currentPage.scale) /
-        this.#pageWidthScaleFactor;
-      const pageHeightScale =
-        ((this.container.clientHeight - vPadding) / currentPage.height) *
-        currentPage.scale;
-      switch (value) {
-        case "page-actual":
-          scale = 1;
-          break;
-        case "page-width":
-          scale = pageWidthScale;
-          break;
-        case "page-height":
-          scale = pageHeightScale;
-          break;
-        case "page-fit":
-          scale = Math.min(pageWidthScale, pageHeightScale);
-          break;
-        case "auto":
-          // For pages in landscape mode, fit the page height to the viewer
-          // *unless* the page would thus become too wide to fit horizontally.
-          const horizontalScale = isPortraitOrientation(currentPage)
-            ? pageWidthScale
-            : Math.min(pageHeightScale, pageWidthScale);
-          scale = Math.min(MAX_AUTO_SCALE, horizontalScale);
-          break;
-        default:
-          console.error(`#setScale: "${value}" is an unknown zoom value.`);
-          return;
-      }
-      options.preset = true;
-      this.#setScaleUpdatePages(scale, value, options);
-    }
-  }
-
-  /**
-   * Refreshes page view: scrolls to the current page and updates the scale.
-   */
-  #resetCurrentPageView() {
-    const pageView = this._pages[this._currentPageNumber - 1];
-
-    if (this.isInPresentationMode) {
-      // Fixes the case when PDF has different page sizes.
-      this.#setScale(this._currentScaleValue, { noScroll: true });
-    }
-    this.#scrollIntoView(pageView);
-  }
-
-  /**
-   * @param {string} label - The page label.
-   * @returns {number|null} The page number corresponding to the page label,
-   *   or `null` when no page labels exist and/or the input is invalid.
-   */
-  pageLabelToPageNumber(label) {
-    if (!this._pageLabels) {
-      return null;
-    }
-    const i = this._pageLabels.indexOf(label);
-    if (i < 0) {
-      return null;
-    }
-    return i + 1;
-  }
-
-  /**
-   * @typedef {Object} ScrollPageIntoViewParameters
-   * @property {number} pageNumber - The page number.
-   * @property {Array} [destArray] - The original PDF destination array, in the
-   *   format: <page-ref> </XYZ|/FitXXX> <args..>
-   * @property {boolean} [allowNegativeOffset] - Allow negative page offsets.
-   *   The default value is `false`.
-   * @property {boolean} [ignoreDestinationZoom] - Ignore the zoom argument in
-   *   the destination array. The default value is `false`.
-   */
-
-  /**
-   * Scrolls page into view.
-   * @param {ScrollPageIntoViewParameters} params
-   */
-  scrollPageIntoView({
-    pageNumber,
-    destArray = null,
-    allowNegativeOffset = false,
-    ignoreDestinationZoom = false,
-  }) {
-    if (!this.pdfDocument) {
-      return;
-    }
-    const pageView =
-      Number.isInteger(pageNumber) && this._pages[pageNumber - 1];
-    if (!pageView) {
-      console.error(
-        `scrollPageIntoView: "${pageNumber}" is not a valid pageNumber parameter.`
-      );
-      return;
-    }
-
-    if (this.isInPresentationMode || !destArray) {
-      this._setCurrentPageNumber(pageNumber, /* resetCurrentPageView = */ true);
-      return;
-    }
-    let x = 0,
-      y = 0;
-    let width = 0,
-      height = 0,
-      widthScale,
-      heightScale;
-    const changeOrientation = pageView.rotation % 180 !== 0;
-    const pageWidth =
-      (changeOrientation ? pageView.height : pageView.width) /
-      pageView.scale /
-      PixelsPerInch.PDF_TO_CSS_UNITS;
-    const pageHeight =
-      (changeOrientation ? pageView.width : pageView.height) /
-      pageView.scale /
-      PixelsPerInch.PDF_TO_CSS_UNITS;
-    let scale = 0;
-    switch (destArray[1].name) {
-      case "XYZ":
-        x = destArray[2];
-        y = destArray[3];
-        scale = destArray[4];
-        // If x and/or y coordinates are not supplied, default to
-        // _top_ left of the page (not the obvious bottom left,
-        // since aligning the bottom of the intended page with the
-        // top of the window is rarely helpful).
-        x = x !== null ? x : 0;
-        y = y !== null ? y : pageHeight;
-        break;
-      case "Fit":
-      case "FitB":
-        scale = "page-fit";
-        break;
-      case "FitH":
-      case "FitBH":
-        y = destArray[2];
-        scale = "page-width";
-        // According to the PDF spec, section 12.3.2.2, a `null` value in the
-        // parameter should maintain the position relative to the new page.
-        if (y === null && this._location) {
-          x = this._location.left;
-          y = this._location.top;
-        } else if (typeof y !== "number" || y < 0) {
-          // The "top" value isn't optional, according to the spec, however some
-          // bad PDF generators will pretend that it is (fixes bug 1663390).
-          y = pageHeight;
-        }
-        break;
-      case "FitV":
-      case "FitBV":
-        x = destArray[2];
-        width = pageWidth;
-        height = pageHeight;
-        scale = "page-height";
-        break;
-      case "FitR":
-        x = destArray[2];
-        y = destArray[3];
-        width = destArray[4] - x;
-        height = destArray[5] - y;
-        let hPadding = SCROLLBAR_PADDING,
-          vPadding = VERTICAL_PADDING;
-
-        if (
-          (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) &&
-          this.removePageBorders
-        ) {
-          hPadding = vPadding = 0;
-        }
-        widthScale =
-          (this.container.clientWidth - hPadding) /
-          width /
-          PixelsPerInch.PDF_TO_CSS_UNITS;
-        heightScale =
-          (this.container.clientHeight - vPadding) /
-          height /
-          PixelsPerInch.PDF_TO_CSS_UNITS;
-        scale = Math.min(Math.abs(widthScale), Math.abs(heightScale));
-        break;
-      default:
-        console.error(
-          `scrollPageIntoView: "${destArray[1].name}" is not a valid destination type.`
-        );
-        return;
-    }
-
-    if (!ignoreDestinationZoom) {
-      if (scale && scale !== this._currentScale) {
-        this.currentScaleValue = scale;
-      } else if (this._currentScale === UNKNOWN_SCALE) {
-        this.currentScaleValue = DEFAULT_SCALE_VALUE;
-      }
-    }
-
-    if (scale === "page-fit" && !destArray[4]) {
-      this.#scrollIntoView(pageView);
-      return;
-    }
-
-    const boundingRect = [
-      pageView.viewport.convertToViewportPoint(x, y),
-      pageView.viewport.convertToViewportPoint(x + width, y + height),
-    ];
-    let left = Math.min(boundingRect[0][0], boundingRect[1][0]);
-    let top = Math.min(boundingRect[0][1], boundingRect[1][1]);
-
-    if (!allowNegativeOffset) {
-      // Some bad PDF generators will create destinations with e.g. top values
-      // that exceeds the page height. Ensure that offsets are not negative,
-      // to prevent a previous page from becoming visible (fixes bug 874482).
-      left = Math.max(left, 0);
-      top = Math.max(top, 0);
-    }
-    this.#scrollIntoView(pageView, /* pageSpot = */ { left, top });
-  }
-
-  _updateLocation(firstPage) {
-    const currentScale = this._currentScale;
-    const currentScaleValue = this._currentScaleValue;
-    const normalizedScaleValue =
-      parseFloat(currentScaleValue) === currentScale
-        ? Math.round(currentScale * 10000) / 100
-        : currentScaleValue;
-
-    const pageNumber = firstPage.id;
-    const currentPageView = this._pages[pageNumber - 1];
-    const container = this.container;
-    const topLeft = currentPageView.getPagePoint(
-      container.scrollLeft - firstPage.x,
-      container.scrollTop - firstPage.y
-    );
-    const intLeft = Math.round(topLeft[0]);
-    const intTop = Math.round(topLeft[1]);
-
-    let pdfOpenParams = `#page=${pageNumber}`;
-    if (!this.isInPresentationMode) {
-      pdfOpenParams += `&zoom=${normalizedScaleValue},${intLeft},${intTop}`;
-    }
-
-    this._location = {
-      pageNumber,
-      scale: normalizedScaleValue,
-      top: intTop,
-      left: intLeft,
-      rotation: this._pagesRotation,
-      pdfOpenParams,
-    };
-  }
-
-  update() {
-    const visible = this._getVisiblePages();
-    const visiblePages = visible.views,
-      numVisiblePages = visiblePages.length;
-
-    if (numVisiblePages === 0) {
-      return;
-    }
-    const newCacheSize = Math.max(DEFAULT_CACHE_SIZE, 2 * numVisiblePages + 1);
-    this.#buffer.resize(newCacheSize, visible.ids);
-
-    for (const { view, visibleArea } of visiblePages) {
-      view.updateVisibleArea(visibleArea);
-    }
-    for (const view of this.#buffer) {
-      if (!visible.ids.has(view.id)) {
-        view.updateVisibleArea(null);
-      }
-    }
-
-    this.renderingQueue.renderHighestPriority(visible);
-
-    const isSimpleLayout =
-      this._spreadMode === SpreadMode.NONE &&
-      (this._scrollMode === ScrollMode.PAGE ||
-        this._scrollMode === ScrollMode.VERTICAL);
-    const currentId = this._currentPageNumber;
-    let stillFullyVisible = false;
-
-    for (const page of visiblePages) {
-      if (page.percent < 100) {
-        break;
-      }
-      if (page.id === currentId && isSimpleLayout) {
-        stillFullyVisible = true;
-        break;
-      }
-    }
-    this._setCurrentPageNumber(
-      stillFullyVisible ? currentId : visiblePages[0].id
-    );
-
-    this._updateLocation(visible.first);
-    this.eventBus.dispatch("updateviewarea", {
-      source: this,
-      location: this._location,
-    });
-  }
-
-  #switchToEditAnnotationMode() {
-    const visible = this._getVisiblePages();
-    const pagesToRefresh = [];
-    const { ids, views } = visible;
-    for (const page of views) {
-      const { view } = page;
-      if (!view.hasEditableAnnotations()) {
-        ids.delete(view.id);
-        continue;
-      }
-      pagesToRefresh.push(page);
-    }
-
-    if (pagesToRefresh.length === 0) {
-      return null;
-    }
-    this.renderingQueue.renderHighestPriority({
-      first: pagesToRefresh[0],
-      last: pagesToRefresh.at(-1),
-      views: pagesToRefresh,
-      ids,
-    });
-
-    return ids;
-  }
-
-  containsElement(element) {
-    return this.container.contains(element);
-  }
-
-  focus() {
-    this.container.focus();
-  }
-
-  get _isContainerRtl() {
-    return getComputedStyle(this.container).direction === "rtl";
-  }
-
-  get isInPresentationMode() {
-    return this.presentationModeState === PresentationModeState.FULLSCREEN;
-  }
-
-  get isChangingPresentationMode() {
-    return this.presentationModeState === PresentationModeState.CHANGING;
-  }
-
-  get isHorizontalScrollbarEnabled() {
-    return this.isInPresentationMode
-      ? false
-      : this.container.scrollWidth > this.container.clientWidth;
-  }
-
-  get isVerticalScrollbarEnabled() {
-    return this.isInPresentationMode
-      ? false
-      : this.container.scrollHeight > this.container.clientHeight;
-  }
-
-  _getVisiblePages() {
-    const views =
-        this._scrollMode === ScrollMode.PAGE
-          ? this.#scrollModePageState.pages
-          : this._pages,
-      horizontal = this._scrollMode === ScrollMode.HORIZONTAL,
-      rtl = horizontal && this._isContainerRtl;
-
-    return getVisibleElements({
-      scrollEl: this.container,
-      views,
-      sortByVisibility: true,
-      horizontal,
-      rtl,
-    });
-  }
-
-  cleanup() {
-    for (const pageView of this._pages) {
-      if (pageView.renderingState !== RenderingStates.FINISHED) {
-        pageView.reset();
-      }
-    }
-  }
-
-  /**
-   * @private
-   */
-  _cancelRendering() {
-    for (const pageView of this._pages) {
-      pageView.cancelRendering();
-    }
-  }
-
-  /**
-   * @param {PDFPageView} pageView
-   * @returns {Promise<PDFPageProxy | null>}
-   */
-  async #ensurePdfPageLoaded(pageView) {
-    if (pageView.pdfPage) {
-      return pageView.pdfPage;
-    }
-    try {
-      const pdfPage = await this.pdfDocument.getPage(pageView.id);
-      if (!pageView.pdfPage) {
-        pageView.setPdfPage(pdfPage);
-      }
-      return pdfPage;
-    } catch (reason) {
-      console.error("Unable to get page for page view", reason);
-      return null; // Page error -- there is nothing that can be done.
-    }
-  }
-
-  #getScrollAhead(visible) {
-    if (visible.first?.id === 1) {
-      return true;
-    } else if (visible.last?.id === this.pagesCount) {
-      return false;
-    }
-    switch (this._scrollMode) {
-      case ScrollMode.PAGE:
-        return this.#scrollModePageState.scrollDown;
-      case ScrollMode.HORIZONTAL:
-        return this.scroll.right;
-    }
-    return this.scroll.down;
-  }
-
-  forceRendering(currentlyVisiblePages) {
-    const visiblePages = currentlyVisiblePages || this._getVisiblePages();
-    const scrollAhead = this.#getScrollAhead(visiblePages);
-    const preRenderExtra =
-      this._spreadMode !== SpreadMode.NONE &&
-      this._scrollMode !== ScrollMode.HORIZONTAL;
-
-    const ignoreDetailViews =
-      // If we are zooming, do not re-render the detail views. Re-renders on
-      // zoom happen with a delay, and once the rendering happens it will also
-      // trigger rendering of the detail views.
-      this.#scaleTimeoutId !== null ||
-      // If we are scrolling and the rendering of a detail view was just
-      // cancelled, it's because the user is scrolling too quickly and so
-      // we constantly need to re-render a different area.
-      // Don't attempt to re-render it: this will be done once the user
-      // stops scrolling.
-      (this.#scrollTimeoutId !== null &&
-        visiblePages.views.some(page => page.detailView?.renderingCancelled));
-
-    const pageView = this.renderingQueue.getHighestPriority(
-      visiblePages,
-      this._pages,
-      scrollAhead,
-      preRenderExtra,
-      ignoreDetailViews
-    );
-
-    if (pageView) {
-      this.#ensurePdfPageLoaded(pageView).then(() => {
-        this.renderingQueue.renderView(pageView);
-      });
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * @type {boolean} Whether all pages of the PDF document have identical
-   *   widths and heights.
-   */
   get hasEqualPageSizes() {
     const firstPageView = this._pages[0];
     for (let i = 1, ii = this._pages.length; i < ii; ++i) {
@@ -1907,9 +1901,13 @@ class PDFViewer {
   }
 
   /**
-   * Returns sizes of the pages.
-   * @returns {Array} Array of objects with width/height/rotation fields.
+   * Refreshes page view: scrolls to the current page and updates the scale.
    */
+
+  #enablePermissions = false
+
+  #mlManager = null
+
   getPagesOverview() {
     let initialOrientation;
     return this._pages.map(pageView => {
@@ -1934,152 +1932,6 @@ class PDFViewer {
         rotation: viewport.rotation,
       };
     });
-  }
-
-  /**
-   * @type {Promise<OptionalContentConfig | null>}
-   */
-  get optionalContentConfigPromise() {
-    if (!this.pdfDocument) {
-      return Promise.resolve(null);
-    }
-    if (!this._optionalContentConfigPromise) {
-      console.error("optionalContentConfigPromise: Not initialized yet.");
-      // Prevent issues if the getter is accessed *before* the `onePageRendered`
-      // promise has resolved; won't (normally) happen in the default viewer.
-      return this.pdfDocument.getOptionalContentConfig({ intent: "display" });
-    }
-    return this._optionalContentConfigPromise;
-  }
-
-  /**
-   * @param {Promise<OptionalContentConfig>} promise - A promise that is
-   *   resolved with an {@link OptionalContentConfig} instance.
-   */
-  set optionalContentConfigPromise(promise) {
-    if (!(promise instanceof Promise)) {
-      throw new Error(`Invalid optionalContentConfigPromise: ${promise}`);
-    }
-    if (!this.pdfDocument) {
-      return;
-    }
-    if (!this._optionalContentConfigPromise) {
-      // Ignore the setter *before* the `onePageRendered` promise has resolved,
-      // since it'll be overwritten anyway; won't happen in the default viewer.
-      return;
-    }
-    this._optionalContentConfigPromise = promise;
-
-    this.refresh(false, { optionalContentConfigPromise: promise });
-
-    this.eventBus.dispatch("optionalcontentconfigchanged", {
-      source: this,
-      promise,
-    });
-  }
-
-  /**
-   * @type {number} One of the values in {ScrollMode}.
-   */
-  get scrollMode() {
-    return this._scrollMode;
-  }
-
-  /**
-   * @param {number} mode - The direction in which the document pages should be
-   *   laid out within the scrolling container.
-   *   The constants from {ScrollMode} should be used.
-   */
-  set scrollMode(mode) {
-    if (
-      typeof PDFJSDev === "undefined"
-        ? window.isGECKOVIEW
-        : PDFJSDev.test("GECKOVIEW")
-    ) {
-      // NOTE: Always ignore the pageLayout in GeckoView since there's
-      // no UI available to change Scroll/Spread modes for the user.
-      return;
-    }
-    if (this._scrollMode === mode) {
-      return; // The Scroll mode didn't change.
-    }
-    if (!isValidScrollMode(mode)) {
-      throw new Error(`Invalid scroll mode: ${mode}`);
-    }
-    if (this.pagesCount > PagesCountLimit.FORCE_SCROLL_MODE_PAGE) {
-      return; // Disabled for performance reasons.
-    }
-    this._previousScrollMode = this._scrollMode;
-
-    this._scrollMode = mode;
-    this.eventBus.dispatch("scrollmodechanged", { source: this, mode });
-
-    this._updateScrollMode(/* pageNumber = */ this._currentPageNumber);
-  }
-
-  _updateScrollMode(pageNumber = null) {
-    const scrollMode = this._scrollMode,
-      viewer = this.viewer;
-
-    viewer.classList.toggle(
-      "scrollHorizontal",
-      scrollMode === ScrollMode.HORIZONTAL
-    );
-    viewer.classList.toggle("scrollWrapped", scrollMode === ScrollMode.WRAPPED);
-
-    if (!this.pdfDocument || !pageNumber) {
-      return;
-    }
-
-    if (scrollMode === ScrollMode.PAGE) {
-      this.#ensurePageViewVisible();
-    } else if (this._previousScrollMode === ScrollMode.PAGE) {
-      // Ensure that the current spreadMode is still applied correctly when
-      // the *previous* scrollMode was `ScrollMode.PAGE`.
-      this._updateSpreadMode();
-    }
-    // Non-numeric scale values can be sensitive to the scroll orientation.
-    // Call this before re-scrolling to the current page, to ensure that any
-    // changes in scale don't move the current page.
-    if (this._currentScaleValue && isNaN(this._currentScaleValue)) {
-      this.#setScale(this._currentScaleValue, { noScroll: true });
-    }
-    this._setCurrentPageNumber(pageNumber, /* resetCurrentPageView = */ true);
-    this.update();
-  }
-
-  /**
-   * @type {number} One of the values in {SpreadMode}.
-   */
-  get spreadMode() {
-    return this._spreadMode;
-  }
-
-  /**
-   * @param {number} mode - Group the pages in spreads, starting with odd- or
-   *   even-number pages (unless `SpreadMode.NONE` is used).
-   *   The constants from {SpreadMode} should be used.
-   */
-  set spreadMode(mode) {
-    if (
-      typeof PDFJSDev === "undefined"
-        ? window.isGECKOVIEW
-        : PDFJSDev.test("GECKOVIEW")
-    ) {
-      // NOTE: Always ignore the pageLayout in GeckoView since there's
-      // no UI available to change Scroll/Spread modes for the user.
-      return;
-    }
-    if (this._spreadMode === mode) {
-      return; // The Spread mode didn't change.
-    }
-    if (!isValidSpreadMode(mode)) {
-      throw new Error(`Invalid spread mode: ${mode}`);
-    }
-    this._spreadMode = mode;
-    this.eventBus.dispatch("spreadmodechanged", { source: this, mode });
-
-    this._updateSpreadMode(/* pageNumber = */ this._currentPageNumber);
   }
 
   _updateSpreadMode(pageNumber = null) {
@@ -2130,8 +1982,324 @@ class PDFViewer {
   }
 
   /**
+   * @typedef {Object} ScrollPageIntoViewParameters
+   * @property {number} pageNumber - The page number.
+   * @property {Array} [destArray] - The original PDF destination array, in the
+   *   format: <page-ref> </XYZ|/FitXXX> <args..>
+   * @property {boolean} [allowNegativeOffset] - Allow negative page offsets.
+   *   The default value is `false`.
+   * @property {boolean} [ignoreDestinationZoom] - Ignore the zoom argument in
+   *   the destination array. The default value is `false`.
+   */
+
+;
+
+  /**
+   * @param {string} val - The page label.
+   */
+
+;
+
+;
+
+;
+
+  #switchAnnotationEditorModeAC = null
+
+  /**
    * @private
    */
+
+;
+
+  #getAllTextInProgress = false
+
+  /**
+   * @type {boolean} - True if all {PDFPageView} objects are initialized.
+   */
+
+  async #onePageRenderedOrForceFetch(signal) {
+    // Unless the viewer *and* its pages are visible, rendering won't start and
+    // `this._onePageRenderedCapability` thus won't be resolved.
+    // To ensure that automatic printing, on document load, still works even in
+    // those cases we force-allow fetching of all pages when:
+    //  - The current window/tab is inactive, which will prevent rendering since
+    //    `requestAnimationFrame` is being used; fixes bug 1746213.
+    //  - The viewer is hidden in the DOM, e.g. in a `display: none` <iframe>
+    //    element; fixes bug 1618621.
+    //  - The viewer is visible, but none of the pages are (e.g. if the
+    //    viewer is very small); fixes bug 1618955.
+    if (
+      document.visibilityState === "hidden" ||
+      !this.container.offsetParent ||
+      this._getVisiblePages().views.length === 0
+    ) {
+      return;
+    }
+
+    // Handle the window/tab becoming inactive *after* rendering has started;
+    // fixes (another part of) bug 1746213.
+    const hiddenCapability = Promise.withResolvers(),
+      ac = new AbortController();
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        if (document.visibilityState === "hidden") {
+          hiddenCapability.resolve();
+        }
+      },
+      { signal: AbortSignal.any([signal, ac.signal]) }
+    );
+
+    await Promise.race([
+      this._onePageRenderedCapability.promise,
+      hiddenCapability.promise,
+    ]);
+    ac.abort(); // Remove the "visibilitychange" listener immediately.
+  }
+
+  _updateLocation(firstPage) {
+    const currentScale = this._currentScale;
+    const currentScaleValue = this._currentScaleValue;
+    const normalizedScaleValue =
+      parseFloat(currentScaleValue) === currentScale
+        ? Math.round(currentScale * 10000) / 100
+        : currentScaleValue;
+
+    const pageNumber = firstPage.id;
+    const currentPageView = this._pages[pageNumber - 1];
+    const container = this.container;
+    const topLeft = currentPageView.getPagePoint(
+      container.scrollLeft - firstPage.x,
+      container.scrollTop - firstPage.y
+    );
+    const intLeft = Math.round(topLeft[0]);
+    const intTop = Math.round(topLeft[1]);
+
+    let pdfOpenParams = `#page=${pageNumber}`;
+    if (!this.isInPresentationMode) {
+      pdfOpenParams += `&zoom=${normalizedScaleValue},${intLeft},${intTop}`;
+    }
+
+    this._location = {
+      pageNumber,
+      scale: normalizedScaleValue,
+      top: intTop,
+      left: intLeft,
+      rotation: this._pagesRotation,
+      pdfOpenParams,
+    };
+  }
+
+  /**
+   * @returns {boolean} Whether the pageNumber is valid (within bounds).
+   * @private
+   */
+
+  /**
+   * @param {number} val - The page number.
+   */
+
+  /**
+   * @type {Promise<OptionalContentConfig | null>}
+   */
+
+;
+
+  /**
+   * @type {number}
+   */
+
+;
+
+  _cancelRendering() {
+    for (const pageView of this._pages) {
+      pageView.cancelRendering();
+    }
+  }
+
+;
+
+;
+
+  /**
+   * @param {number} val - Scale of the pages in percents.
+   */
+
+;
+
+  /**
+   * @type {number}
+   */
+
+;
+
+;
+
+  get isInPresentationMode() {
+    return this.presentationModeState === PresentationModeState.FULLSCREEN;
+  }
+
+  _resetView() {
+    this._pages = [];
+    this._currentPageNumber = 1;
+    this._currentScale = UNKNOWN_SCALE;
+    this._currentScaleValue = null;
+    this._pageLabels = null;
+    this.#buffer = new PDFPageViewBuffer(DEFAULT_CACHE_SIZE);
+    this._location = null;
+    this._pagesRotation = 0;
+    this._optionalContentConfigPromise = null;
+    this._firstPageCapability = Promise.withResolvers();
+    this._onePageRenderedCapability = Promise.withResolvers();
+    this._pagesCapability = Promise.withResolvers();
+    this._scrollMode = ScrollMode.VERTICAL;
+    this._previousScrollMode = ScrollMode.UNKNOWN;
+    this._spreadMode = SpreadMode.NONE;
+
+    this.#scrollModePageState = {
+      previousPageNumber: 1,
+      scrollDown: true,
+      pages: [],
+    };
+
+    this.#eventAbortController?.abort();
+    this.#eventAbortController = null;
+
+    // Remove the pages from the DOM...
+    this.viewer.textContent = "";
+    // ... and reset the Scroll mode CSS class(es) afterwards.
+    this._updateScrollMode();
+
+    this.viewer.removeAttribute("lang");
+
+    this.#hiddenCopyElement?.remove();
+    this.#hiddenCopyElement = null;
+
+    this.#cleanupTimeouts();
+    this.#cleanupSwitchAnnotationEditorMode();
+  }
+
+  /**
+   * @param {number} mode - The direction in which the document pages should be
+   *   laid out within the scrolling container.
+   *   The constants from {ScrollMode} should be used.
+   */
+
+  #enableNewAltTextWhenAddingImage = false
+
+;
+
+;
+
+  #altTextManager = null
+
+  #getScrollAhead(visible) {
+    if (visible.first?.id === 1) {
+      return true;
+    } else if (visible.last?.id === this.pagesCount) {
+      return false;
+    }
+    switch (this._scrollMode) {
+      case ScrollMode.PAGE:
+        return this.#scrollModePageState.scrollDown;
+      case ScrollMode.HORIZONTAL:
+        return this.scroll.right;
+    }
+    return this.scroll.down;
+  }
+
+  #eventAbortController = null
+
+;
+
+  /**
+   * @type {boolean} Whether all pages of the PDF document have identical
+   *   widths and heights.
+   */
+
+  get #pageWidthScaleFactor() {
+    if (
+      this._spreadMode !== SpreadMode.NONE &&
+      this._scrollMode !== ScrollMode.HORIZONTAL
+    ) {
+      return 2;
+    }
+    return 1;
+  }
+
+  get pagesCount() {
+    return this._pages.length;
+  }
+
+  /**
+   * @type {number}
+   */
+
+;
+
+;
+
+  set scrollMode(mode) {
+    if (
+      typeof PDFJSDev === "undefined"
+        ? window.isGECKOVIEW
+        : PDFJSDev.test("GECKOVIEW")
+    ) {
+      // NOTE: Always ignore the pageLayout in GeckoView since there's
+      // no UI available to change Scroll/Spread modes for the user.
+      return;
+    }
+    if (this._scrollMode === mode) {
+      return; // The Scroll mode didn't change.
+    }
+    if (!isValidScrollMode(mode)) {
+      throw new Error(`Invalid scroll mode: ${mode}`);
+    }
+    if (this.pagesCount > PagesCountLimit.FORCE_SCROLL_MODE_PAGE) {
+      return; // Disabled for performance reasons.
+    }
+    this._previousScrollMode = this._scrollMode;
+
+    this._scrollMode = mode;
+    this.eventBus.dispatch("scrollmodechanged", { source: this, mode });
+
+    this._updateScrollMode(/* pageNumber = */ this._currentPageNumber);
+  }
+  get scrollMode() {
+    return this._scrollMode;
+  }
+
+  _updateScrollMode(pageNumber = null) {
+    const scrollMode = this._scrollMode,
+      viewer = this.viewer;
+
+    viewer.classList.toggle(
+      "scrollHorizontal",
+      scrollMode === ScrollMode.HORIZONTAL
+    );
+    viewer.classList.toggle("scrollWrapped", scrollMode === ScrollMode.WRAPPED);
+
+    if (!this.pdfDocument || !pageNumber) {
+      return;
+    }
+
+    if (scrollMode === ScrollMode.PAGE) {
+      this.#ensurePageViewVisible();
+    } else if (this._previousScrollMode === ScrollMode.PAGE) {
+      // Ensure that the current spreadMode is still applied correctly when
+      // the *previous* scrollMode was `ScrollMode.PAGE`.
+      this._updateSpreadMode();
+    }
+    // Non-numeric scale values can be sensitive to the scroll orientation.
+    // Call this before re-scrolling to the current page, to ensure that any
+    // changes in scale don't move the current page.
+    if (this._currentScaleValue && isNaN(this._currentScaleValue)) {
+      this.#setScale(this._currentScaleValue, { noScroll: true });
+    }
+    this._setCurrentPageNumber(pageNumber, /* resetCurrentPageView = */ true);
+    this.update();
+  }
   _getPageAdvance(currentPageNumber, previous = false) {
     switch (this._scrollMode) {
       case ScrollMode.WRAPPED: {
@@ -2378,18 +2546,6 @@ class PDFViewer {
       ? this.#annotationEditorMode
       : AnnotationEditorType.DISABLE;
   }
-
-  /**
-   * @typedef {Object} AnnotationEditorModeOptions
-   * @property {number} mode - The editor mode (none, FreeText, ink, ...).
-   * @property {string|null} [editId] - ID of the existing annotation to edit.
-   * @property {boolean} [isFromKeyboard] - True if the mode change is due to a
-   *   keyboard action.
-   */
-
-  /**
-   * @param {AnnotationEditorModeOptions} options
-   */
   set annotationEditorMode({ mode, editId = null, isFromKeyboard = false }) {
     if (!this.#annotationEditorUIManager) {
       throw new Error(`The AnnotationEditor is not enabled.`);
@@ -2469,6 +2625,18 @@ class PDFViewer {
     }
     updater();
   }
+
+  /**
+   * @typedef {Object} AnnotationEditorModeOptions
+   * @property {number} mode - The editor mode (none, FreeText, ink, ...).
+   * @property {string|null} [editId] - ID of the existing annotation to edit.
+   * @property {boolean} [isFromKeyboard] - True if the mode change is due to a
+   *   keyboard action.
+   */
+
+  /**
+   * @param {AnnotationEditorModeOptions} options
+   */
 
   refresh(noUpdate = false, updateArgs = Object.create(null)) {
     if (!this.pdfDocument) {
