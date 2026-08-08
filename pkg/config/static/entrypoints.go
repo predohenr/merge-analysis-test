@@ -88,9 +88,15 @@ type HTTPConfig struct {
 
 // SetDefaults sets the default values.
 func (h *HTTPConfig) SetDefaults() {
-	h.SanitizePath = ptr.To(true)
+	sanitizePath := true
+	h.SanitizePath = &sanitizePath
 	h.MaxHeaderBytes = http.DefaultMaxHeaderBytes
 	h.UnderscoreHeadersStrategy = UnderscoreHeadersStrategyKeep
+}
+
+func (c *HTTPConfig) SetDefaults() {
+	c.SanitizePath = ptr.To(true)
+	c.MaxHeaderBytes = http.DefaultMaxHeaderBytes
 }
 
 // EncodedCharacters configures which encoded characters are allowed in the request path.
