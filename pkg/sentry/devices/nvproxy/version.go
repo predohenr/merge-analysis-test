@@ -112,9 +112,9 @@ type DriverABIInfo struct {
 // IoctlName is the name of the constant used by the Nvidia driver to define
 // the ioctl number/control command/allocation class.
 type IoctlName = string
+type DriverStructName = string
 
 // DriverStructName is the name of a struct used by the Nvidia driver.
-type DriverStructName = string
 
 // DriverStruct ties an nvproxy struct type to its corresponding driver struct name.
 type DriverStruct struct {
