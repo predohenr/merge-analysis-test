@@ -161,6 +161,36 @@ func TestAccRDSInstanceAutomatedBackupsReplication_kmsEncrypted(t *testing.T) {
 	})
 }
 
+func testAccCheckInstanceAutomatedBackupsReplicationExist(ctx context.Context, t *testing.T, n string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		conn := acctest.ProviderMeta(ctx, t).RDSClient(ctx)
+
+		_, err := tfrds.FindDBInstanceAutomatedBackupByARN(ctx, conn, rs.Primary.ID)
+
+		return err
+	}
+}
+
+func testAccCheckInstanceAutomatedBackupsReplicationExist(ctx context.Context, n string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		conn := acctest.ProviderMeta(ctx, t).RDSClient(ctx)
+
+		_, err := tfrds.FindDBInstanceAutomatedBackupByARN(ctx, conn, rs.Primary.ID)
+
+		return err
+	}
+}
+
 func TestAccRDSInstanceAutomatedBackupsReplication_withFinalSnapshot(t *testing.T) {
 	ctx := acctest.Context(t)
 	if testing.Short() {
@@ -194,21 +224,6 @@ func TestAccRDSInstanceAutomatedBackupsReplication_withFinalSnapshot(t *testing.
 			},
 		},
 	})
-}
-func testAccCheckInstanceAutomatedBackupsReplicationExist(ctx context.Context, t *testing.T, n string) resource.TestCheckFunc {
-
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[n]
-		if !ok {
-			return fmt.Errorf("Not found: %s", n)
-		}
-
-		conn := acctest.ProviderMeta(ctx, t).RDSClient(ctx)
-
-		_, err := tfrds.FindDBInstanceAutomatedBackupByARN(ctx, conn, rs.Primary.ID)
-
-		return err
-	}
 }
 
 func testAccCheckInstanceAutomatedBackupsReplicationDestroy(ctx context.Context, t *testing.T) resource.TestCheckFunc {
