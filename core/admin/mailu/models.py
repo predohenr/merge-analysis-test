@@ -438,10 +438,6 @@ class Email(object):
         """ the domain part of the email address """
         return db.Column(IdnaDomain, db.ForeignKey(Domain.name),
             nullable=False, default=IdnaDomain)
-
-    # This field is redundant with both localpart and domain name.
-    # It is however very useful for quick lookups without joining tables,
-    # especially when the mail server is reading the database.
     @declarative.declared_attr
     def _email(cls):
         """ the complete email address (localpart@domain) """
@@ -453,9 +449,6 @@ class Email(object):
             return '{localpart}@{domain_name}'.format_map(ctx.current_parameters)
 
         return db.Column('email', IdnaEmail, primary_key=True, nullable=False, onupdate=updater)
-
-    # We need to keep email, localpart and domain_name in sync.
-    # But IMHO using email as primary key was not a good idea in the first place.
     @hybrid_property
     def email(self):
         """ getter for email - gets _email """
@@ -486,21 +479,6 @@ class Email(object):
         # gets called after mappings are completed
         sqlalchemy.event.listen(cls.localpart, 'set', cls._update_localpart, propagate=True, retval=True)
         sqlalchemy.event.listen(cls.domain_name, 'set', cls._update_domain_name, propagate=True)
-
-    def sendmail(self, subject, body):
-        """ send an email to the address """
-        try:
-            f_addr = f'{app.config["POSTMASTER"]}@{idna.encode(app.config["DOMAIN"]).decode("ascii")}'
-            with smtplib.LMTP(host=app.config['FRONT_ADDRESS'], port=2525) as lmtp:
-                to_address = f'{self.localpart}@{idna.encode(self.domain_name).decode("ascii")}'
-                msg = text.MIMEText(body)
-                msg['Subject'] = subject
-                msg['From'] = f_addr
-                msg['To'] = to_address
-                lmtp.sendmail(f_addr, [to_address], msg.as_string())
-            return True
-        except smtplib.SMTPException:
-            return False
 
     @classmethod
     def resolve_domain(cls, email):
@@ -567,6 +545,28 @@ class Email(object):
             return pure_alias.destination
 
         return None
+
+    # This field is redundant with both localpart and domain name.
+    # It is however very useful for quick lookups without joining tables,
+    # especially when the mail server is reading the database.
+
+    # We need to keep email, localpart and domain_name in sync.
+    # But IMHO using email as primary key was not a good idea in the first place.
+
+    def sendmail(self, subject, body):
+        """ send an email to the address """
+        try:
+            f_addr = f'{app.config["POSTMASTER"]}@{idna.encode(app.config["DOMAIN"]).decode("ascii")}'
+            with smtplib.LMTP(host=app.config['FRONT_ADDRESS'], port=2525) as lmtp:
+                to_address = f'{self.localpart}@{idna.encode(self.domain_name).decode("ascii")}'
+                msg = text.MIMEText(body)
+                msg['Subject'] = subject
+                msg['From'] = f_addr
+                msg['To'] = to_address
+                lmtp.sendmail(f_addr, [to_address], msg.as_string())
+            return True
+        except smtplib.SMTPException:
+            return False
 
 
 class User(Base, Email):
@@ -667,6 +667,17 @@ class User(Base, Email):
         )
         return cls._ctx
 
+    @classmethod
+    def get(cls, email):
+        """ find user object for email address """
+        return cls.query.get(email)
+
+    @classmethod
+    def login(cls, email, password):
+        """ login user when enabled and password is valid """
+        user = cls.query.get(email)
+        return user if (user and user.enabled and user.check_password(password)) else None
+
     def check_password(self, password):
         """ verifies password against stored hash
             and updates hash if outdated
@@ -738,17 +749,6 @@ set() containing the sessions to keep
         """ send welcome email to user """
         if app.config['WELCOME']:
             self.sendmail(app.config['WELCOME_SUBJECT'], app.config['WELCOME_BODY'])
-
-    @classmethod
-    def get(cls, email):
-        """ find user object for email address """
-        return cls.query.get(email)
-
-    @classmethod
-    def login(cls, email, password):
-        """ login user when enabled and password is valid """
-        user = cls.query.get(email)
-        return user if (user and user.enabled and user.check_password(password)) else None
 
 
 class Alias(Base, Email):
