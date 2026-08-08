@@ -631,102 +631,47 @@ class Repository:
     # Memory use is this count times the pack size.
     PACK_READER_CACHE_SIZE = 3
 
-    def __init__(
-        self,
-        path_or_location,
-        create=False,
-        exclusive=False,
-        lock_wait=1.0,
-        lock=True,
-        send_log_cb=None,
-        permissions=None,
-    ):
-        if isinstance(path_or_location, Location):
-            location = path_or_location
-            if location.proto == "file":
-                url = Path(location.path).as_uri()
-            else:
-                url = location.processed  # location as given by user, processed placeholders
-        else:
-            url = Path(path_or_location).absolute().as_uri()
-            location = Location(url)
-        self._location = location
-        self.url = url
-        ns_config = {
-            "archives/": {"levels": [0]},
-            "cache/": {"levels": [0]},
-            "config/": {"levels": [0]},
-            "index/": {"levels": [0]},
-            "keys/": {"levels": [0]},
-            "locks/": {"levels": [0]},
-            "packs/": {"levels": [1]},
-        }
-        # Get permissions from parameter or environment variable
-        permissions = permissions if permissions is not None else os.environ.get("BORG_REPO_PERMISSIONS", "all")
-        permissions = borg_permissions(permissions)
+    @property
+    def chunks(self):
+        """ChunkIndex mapping every known chunk id to its pack location.
 
-        # writethrough cache for the packs/ namespace: on a cache miss borgstore loads the whole
-        # pack, caches it, and serves later reads of that pack's objects from the cache.
-        # packs are named by content hash, so one cache directory can hold packs from several
-        # repositories; a colliding name has identical content, so sharing is safe.
-        # BORG_STORE_CACHE sets the cache directory ("1" means <cache_dir>/storecache); the
-        # directory holds the whole store's cache, currently just the packs/ namespace.
-        # BORG_PACK_CACHE_SIZE limits the pack cache size in bytes.
-        cache_url = None
-        store_cache = os.environ.get("BORG_STORE_CACHE")
-        if store_cache:
-            if store_cache == "1":
-                cache_dir = Path(get_cache_dir("storecache"))
-            else:
-                cache_dir = Path(store_cache)
-                cache_dir.mkdir(parents=True, exist_ok=True)
-            ns_config["packs/"]["cache"] = "writethrough"
-            cache_size = os.environ.get("BORG_PACK_CACHE_SIZE")
-            if cache_size:
-                ns_config["packs/"]["size"] = int(cache_size)
-            cache_url = cache_dir.as_uri()
+        This property is the single owner of the in-memory index: get() resolves
+        pack locations through it, PackWriter updates it, and the Cache reads it
+        from here rather than building its own.  Built lazily on first access and
+        persisted back to the repo cache at close().
+        """
+        if self._chunks is None:
+            from .cache import build_chunkindex_from_repo
 
-        propagate_rsh()  # borgstore shall use the same remote shell command as borg
+            self._chunks = build_chunkindex_from_repo(self)
+        return self._chunks
 
-        try:
-            if location.proto == "rest":
-                # rest:// is served by "borg serve --rest" (reachable via ssh if a host is given),
-                # talking HTTP over stdio - rather than borgstore's own "borgstore-server-rest" command.
-                # permissions are not given to the (remote) backend here; they are enforced on the
-                # server side by "borg serve --rest --permissions ...".
-                backend = build_rest_backend(location)
-                # note: borgstore >= 0.6 Store serializes all its operations internally, so the
-                # PackWriter store-thread and the main thread can share it (borgstore #206).
-                self.store = Store(backend=backend, config=ns_config, cache_url=cache_url)
-            else:
-                self.store = Store(url, config=ns_config, permissions=permissions, cache_url=cache_url)
-        except StoreBackendError as e:
-            raise Error(str(e))
-        # None means "all" (no restrictions); for rest:// the backend enforces permissions
-        # server-side, so the client does not check them (see above).
-        self.permissions = None if location.proto == "rest" else permissions
-        self.store_opened = False
-        self.version = None
-        # long-running repository methods which emit log or progress output are responsible for calling
-        # the ._send_log method periodically to get log and progress output transferred to the borg client
-        # in a timely manner, in case we have a RemoteRepository.
-        # for local repositories ._send_log can be called also (it will just do nothing in that case).
-        self._send_log = send_log_cb or (lambda: None)
-        self.do_create = create
-        self.created = False
-        self.acceptable_repo_versions = (4,)
-        self.opened = False
-        self.lock = None
-        self.do_lock = lock
-        self.lock_wait = lock_wait
-        self.exclusive = exclusive
-        self._pack_writer = None
-        self._chunks = None  # ChunkIndex; loaded lazily on first access to .chunks
-        # pack_id -> PackReader holding the whole pack; get_many loads into it, get() reuses it
-        self._pack_cache = LRUCache(capacity=self.PACK_READER_CACHE_SIZE)
+    @property
+    def id_str(self):
+        return bin_to_hex(self.id)
 
-    def __repr__(self):
-        return f"<{self.__class__.__name__} {self._location}>"
+    @property
+    def pack_max_size(self):
+        """The configured byte cap for a pack (BORG_PACK_MAX_SIZE, or the default if count-bound)."""
+        return self._pack_writer.max_size or DEFAULT_PACK_MAX_SIZE
+
+    @chunks.setter
+    def chunks(self, value):
+        # The index is normally built lazily; this setter exists for the few callers
+        # that must install a specific index (e.g. wiping the cache, or restoring an
+        # index captured before close()).  To drop a stale index so it rebuilds, do not
+        # assign None here -- call invalidate_chunk_index() instead.
+        self._chunks = value
+
+    @property
+    def is_chunk_index_loaded(self):
+        """Whether the in-memory chunk index has been built/loaded this session.
+
+        Lets the few flag-style checks ask "is it loaded?" without going through the
+        .chunks property (which would build it on demand).  self._chunks should not be
+        read directly elsewhere; use .chunks for the index or this for the loaded flag.
+        """
+        return self._chunks is not None
 
     def __enter__(self):
         if self.do_create:
@@ -740,12 +685,87 @@ class Repository:
             raise
         return self
 
+    def _cached_pack_reader(self, pack_id):
+        """Return a PackReader holding the whole pack, loading it into the cache on a miss."""
+        reader = self._pack_cache.get(pack_id)
+        if reader is None:
+            key = "packs/" + bin_to_hex(pack_id)
+            reader = PackReader(pack_id=pack_id, pack_contents=self.store.load(key))
+            self._pack_cache[pack_id] = reader
+        return reader
+
+    def destroy(self):
+        """Destroy the repository"""
+        self.close()
+        self.store.destroy()
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__} {self._location}>"
+
+    def flush(self):
+        """Flush any buffered pack writer chunks."""
+        if self._pack_writer is not None:
+            self._lock_refresh()
+            self._pack_writer.flush()  # PackWriter updates _chunks internally
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    @property
-    def id_str(self):
-        return bin_to_hex(self.id)
+    def save_key(self, keydata):
+        # additive: store this borg key, keeping any other borg keys of this repository.
+        # note: saving an empty key is a no-op here; use delete_key() to remove a borg key.
+        if keydata:
+            self.store_key(keydata)
+
+    def info(self):
+        """return some infos about the repo (must be opened first)"""
+        # note: don't do anything expensive here or separate the lock refresh into a separate method.
+        self._lock_refresh()  # do not remove, see do_with_lock()
+        info = dict(id=self.id, version=self.version)
+        return info
+
+    def load_key(self):
+        # convenience: return the first borg key matching this repository's ID, or b"" if none.
+        keys = self.load_keys()
+        return keys[0][1] if keys else b""
+
+    def store_key(self, keydata):
+        # store a single repokey borg key (content-addressed). does NOT delete other borg keys,
+        # so a repository can have multiple borg keys (one per passphrase). returns the
+        # store object name (= borg key id) under which the borg key was stored.
+        digest = sha256(keydata).hexdigest()
+        self.store.store(f"keys/{digest}", keydata)
+        return digest
+
+    def invalidate_chunk_index(self):
+        """Drop the in-memory chunk index so close() will not persist a stale copy.
+
+        Called when the on-disk chunk index is deleted; the next access to
+        .chunks rebuilds the index from actual repository contents.  PackWriter
+        reads the index through this Repository, so it follows automatically.
+        """
+        self._chunks = None
+
+    def load_keys(self):
+        # return a list of (name, keydata) for all borg keys matching this repository's ID.
+        repo_id_hex = bin_to_hex(self.id)
+        result = []
+        try:
+            infos = list(self.store.list("keys"))
+        except StoreObjectNotFound:
+            return result
+        for info in infos:
+            try:
+                keydata = self.store.load(f"keys/{info.name}")
+            except StoreObjectNotFound:
+                continue
+            if is_keyfile(keydata, repo_id_hex):
+                result.append((info.name, keydata))
+        return result
+
+    def _lock_refresh(self):
+        if self.lock is not None:
+            self.lock.refresh()
 
     def create(self):
         """Create a new empty repository"""
@@ -769,199 +789,6 @@ class Repository:
             write_chunkindex_to_repo(self, ChunkIndex(), clear=True, force_write=True)
         finally:
             self.store.close()
-
-    def _set_id(self, id):
-        # for testing: change the id of an existing repository
-        assert self.opened
-        assert isinstance(id, bytes) and len(id) == 32
-        self.id = id
-        self.store.store("config/id", bin_to_hex(id).encode())
-
-    def _lock_refresh(self):
-        if self.lock is not None:
-            self.lock.refresh()
-
-    def store_key(self, keydata):
-        # store a single repokey borg key (content-addressed). does NOT delete other borg keys,
-        # so a repository can have multiple borg keys (one per passphrase). returns the
-        # store object name (= borg key id) under which the borg key was stored.
-        digest = sha256(keydata).hexdigest()
-        self.store.store(f"keys/{digest}", keydata)
-        return digest
-
-    def save_key(self, keydata):
-        # additive: store this borg key, keeping any other borg keys of this repository.
-        # note: saving an empty key is a no-op here; use delete_key() to remove a borg key.
-        if keydata:
-            self.store_key(keydata)
-
-    def load_keys(self):
-        # return a list of (name, keydata) for all borg keys matching this repository's ID.
-        repo_id_hex = bin_to_hex(self.id)
-        result = []
-        try:
-            infos = list(self.store.list("keys"))
-        except StoreObjectNotFound:
-            return result
-        for info in infos:
-            try:
-                keydata = self.store.load(f"keys/{info.name}")
-            except StoreObjectNotFound:
-                continue
-            if is_keyfile(keydata, repo_id_hex):
-                result.append((info.name, keydata))
-        return result
-
-    def load_key(self):
-        # convenience: return the first borg key matching this repository's ID, or b"" if none.
-        keys = self.load_keys()
-        return keys[0][1] if keys else b""
-
-    def delete_key(self, name):
-        # delete a single borg key by its store object name (borg key id).
-        try:
-            self.store.delete(f"keys/{name}")
-        except StoreObjectNotFound:
-            pass
-
-    def destroy(self):
-        """Destroy the repository"""
-        self.close()
-        self.store.destroy()
-
-    def open(self, *, exclusive, lock_wait=None, lock=True):
-        assert lock_wait is not None
-        try:
-            self.store.open()
-        except StoreBackendDoesNotExist:
-            raise self.DoesNotExist(str(self._location)) from None
-        else:
-            self.store_opened = True
-        try:
-            readme = self.store.load("config/readme").decode()
-        except StoreObjectNotFound:
-            raise self.DoesNotExist(str(self._location)) from None
-        if readme != REPOSITORY_README:
-            raise self.InvalidRepository(str(self._location))
-        self.version = int(self.store.load("config/version").decode())
-        if self.version not in self.acceptable_repo_versions:
-            self.close()
-            raise self.InvalidRepositoryConfig(
-                str(self._location), "repository version %d is not supported by this borg version" % self.version
-            )
-        self.id = hex_to_bin(self.store.load("config/id").decode(), length=32)
-        # important: lock *after* making sure that there actually is an existing, supported repository.
-        if lock:
-            self.lock = Lock(self.store, exclusive, timeout=lock_wait).acquire()
-        self._chunks = None
-        # pack-sizing overrides: BORG_PACK_MAX_COUNT sets the max object count per pack,
-        # BORG_PACK_MAX_SIZE the max pack size in bytes. Default: size-bound only.
-        max_count_env = os.environ.get("BORG_PACK_MAX_COUNT")
-        max_size_env = os.environ.get("BORG_PACK_MAX_SIZE")
-        max_count = int(max_count_env) if max_count_env is not None else None
-        if max_size_env is not None:
-            max_size = int(max_size_env)
-        else:
-            max_size = None if max_count is not None else DEFAULT_PACK_MAX_SIZE
-        # BORG_PACK_ASYNC=no disables the background store-thread (debugging aid, see PackWriter).
-        async_store = os.environ.get("BORG_PACK_ASYNC", "yes") != "no"
-        self._pack_writer = PackWriter(
-            self.store, repository=self, max_count=max_count, max_size=max_size, async_store=async_store
-        )
-        self.opened = True
-
-    @property
-    def pack_max_size(self):
-        """The configured byte cap for a pack (BORG_PACK_MAX_SIZE, or the default if count-bound)."""
-        return self._pack_writer.max_size or DEFAULT_PACK_MAX_SIZE
-
-    @property
-    def chunks(self):
-        """ChunkIndex mapping every known chunk id to its pack location.
-
-        This property is the single owner of the in-memory index: get() resolves
-        pack locations through it, PackWriter updates it, and the Cache reads it
-        from here rather than building its own.  Built lazily on first access and
-        persisted back to the repo cache at close().
-        """
-        if self._chunks is None:
-            from .cache import build_chunkindex_from_repo
-
-            self._chunks = build_chunkindex_from_repo(self)
-        return self._chunks
-
-    @chunks.setter
-    def chunks(self, value):
-        # The index is normally built lazily; this setter exists for the few callers
-        # that must install a specific index (e.g. wiping the cache, or restoring an
-        # index captured before close()).  To drop a stale index so it rebuilds, do not
-        # assign None here -- call invalidate_chunk_index() instead.
-        self._chunks = value
-
-    def invalidate_chunk_index(self):
-        """Drop the in-memory chunk index so close() will not persist a stale copy.
-
-        Called when the on-disk chunk index is deleted; the next access to
-        .chunks rebuilds the index from actual repository contents.  PackWriter
-        reads the index through this Repository, so it follows automatically.
-        """
-        self._chunks = None
-
-    @property
-    def is_chunk_index_loaded(self):
-        """Whether the in-memory chunk index has been built/loaded this session.
-
-        Lets the few flag-style checks ask "is it loaded?" without going through the
-        .chunks property (which would build it on demand).  self._chunks should not be
-        read directly elsewhere; use .chunks for the index or this for the loaded flag.
-        """
-        return self._chunks is not None
-
-    def flush(self):
-        """Flush any buffered pack writer chunks."""
-        if self._pack_writer is not None:
-            self._lock_refresh()
-            self._pack_writer.flush()  # PackWriter updates _chunks internally
-
-    def close(self):
-        if self._pack_writer is not None:
-            try:
-                # normally a no-op: flush() is a barrier and runs before close().  when close() runs
-                # while unwinding an error, a pack store may still be in flight: join it, so a stored
-                # pack gets recorded in the index and a failed one gets its index entries dropped.
-                self._pack_writer.join_inflight()
-            except Exception as exc:
-                # do not raise: we are closing, probably unwinding an error already; raising here
-                # would just mask that original error.
-                logger.warning("pack store failed during close: %s", exc)
-            assert not self._pack_writer._pieces, "PackWriter has unflushed chunks; call flush() before close()"
-        # close() may run again after the store was already closed (idempotent close), so we can
-        # only persist while the store is open. Persisting is also a no-op unless chunks were added
-        # this session (only F_NEW entries are serialized, and an empty incremental write is skipped).
-        # guard on is_chunk_index_loaded so we never trigger a lazy rebuild just to persist on close.
-        if self.store_opened and self.is_chunk_index_loaded:
-            from .cache import write_chunkindex_to_repo
-
-            write_chunkindex_to_repo(self, self.chunks, incremental=True)
-        if self.lock:
-            # ignore_not_found: close() runs during normal teardown, but also while unwinding an
-            # exception. if the lock was already gone (e.g. it went stale and another client killed
-            # it, or refresh() aborted with LockTimeout), a NotLocked raised here would mask the
-            # original error. we are closing anyway, so treat a missing lock as nothing to release.
-            self.lock.release(ignore_not_found=True)
-            self.lock = None
-        if self.store_opened:
-            self.store.close()
-            self.store_opened = False
-        self.opened = False
-        self._pack_cache.clear()
-
-    def info(self):
-        """return some infos about the repo (must be opened first)"""
-        # note: don't do anything expensive here or separate the lock refresh into a separate method.
-        self._lock_refresh()  # do not remove, see do_with_lock()
-        info = dict(id=self.id, version=self.version)
-        return info
 
     def check(self, repair=False, max_duration=0, max_age=0):
         """Check repository consistency.
@@ -1118,6 +945,43 @@ class Repository:
             logger.error(f"Finished {mode} repository check, errors found.")
         return not problems or repair
 
+    def _set_id(self, id):
+        # for testing: change the id of an existing repository
+        assert self.opened
+        assert isinstance(id, bytes) and len(id) == 32
+        self.id = id
+        self.store.store("config/id", bin_to_hex(id).encode())
+
+    def get_many(self, ids, read_data=True, raise_missing=True):
+        if not read_data:
+            # read_data=False returns only each object's header+meta, sized per object by get().
+            for id_ in ids:
+                yield self.get(id_, read_data=read_data, raise_missing=raise_missing)
+            return
+
+        for id_ in ids:
+            self._lock_refresh()
+            entry = self.chunks.get(id_)
+            if entry is None or self.chunks.is_pending(id_):
+                # id unknown or still buffered: get() raises or returns None accordingly
+                yield self.get(id_, read_data=True, raise_missing=raise_missing)
+                continue
+            try:
+                reader = self._cached_pack_reader(entry.pack_id)
+            except StoreObjectNotFound:
+                if raise_missing:
+                    raise self.PackNotFound(id_, entry.pack_id, str(self._location)) from None
+                yield None
+            else:
+                yield reader.read(entry.obj_offset, entry.obj_size)
+
+    def delete_key(self, name):
+        # delete a single borg key by its store object name (borg key id).
+        try:
+            self.store.delete(f"keys/{name}")
+        except StoreObjectNotFound:
+            pass
+
     def list(self, limit=None, marker=None):
         """
         list <limit> infos starting from after id <marker>.
@@ -1202,37 +1066,38 @@ class Repository:
             else:
                 return None
 
-    def _cached_pack_reader(self, pack_id):
-        """Return a PackReader holding the whole pack, loading it into the cache on a miss."""
-        reader = self._pack_cache.get(pack_id)
-        if reader is None:
-            key = "packs/" + bin_to_hex(pack_id)
-            reader = PackReader(pack_id=pack_id, pack_contents=self.store.load(key))
-            self._pack_cache[pack_id] = reader
-        return reader
-
-    def get_many(self, ids, read_data=True, raise_missing=True):
-        if not read_data:
-            # read_data=False returns only each object's header+meta, sized per object by get().
-            for id_ in ids:
-                yield self.get(id_, read_data=read_data, raise_missing=raise_missing)
-            return
-
-        for id_ in ids:
-            self._lock_refresh()
-            entry = self.chunks.get(id_)
-            if entry is None or self.chunks.is_pending(id_):
-                # id unknown or still buffered: get() raises or returns None accordingly
-                yield self.get(id_, read_data=True, raise_missing=raise_missing)
-                continue
+    def close(self):
+        if self._pack_writer is not None:
             try:
-                reader = self._cached_pack_reader(entry.pack_id)
-            except StoreObjectNotFound:
-                if raise_missing:
-                    raise self.PackNotFound(id_, entry.pack_id, str(self._location)) from None
-                yield None
-            else:
-                yield reader.read(entry.obj_offset, entry.obj_size)
+                # normally a no-op: flush() is a barrier and runs before close().  when close() runs
+                # while unwinding an error, a pack store may still be in flight: join it, so a stored
+                # pack gets recorded in the index and a failed one gets its index entries dropped.
+                self._pack_writer.join_inflight()
+            except Exception as exc:
+                # do not raise: we are closing, probably unwinding an error already; raising here
+                # would just mask that original error.
+                logger.warning("pack store failed during close: %s", exc)
+            assert not self._pack_writer._pieces, "PackWriter has unflushed chunks; call flush() before close()"
+        # close() may run again after the store was already closed (idempotent close), so we can
+        # only persist while the store is open. Persisting is also a no-op unless chunks were added
+        # this session (only F_NEW entries are serialized, and an empty incremental write is skipped).
+        # guard on is_chunk_index_loaded so we never trigger a lazy rebuild just to persist on close.
+        if self.store_opened and self.is_chunk_index_loaded:
+            from .cache import write_chunkindex_to_repo
+
+            write_chunkindex_to_repo(self, self.chunks, incremental=True)
+        if self.lock:
+            # ignore_not_found: close() runs during normal teardown, but also while unwinding an
+            # exception. if the lock was already gone (e.g. it went stale and another client killed
+            # it, or refresh() aborted with LockTimeout), a NotLocked raised here would mask the
+            # original error. we are closing anyway, so treat a missing lock as nothing to release.
+            self.lock.release(ignore_not_found=True)
+            self.lock = None
+        if self.store_opened:
+            self.store.close()
+            self.store_opened = False
+        self.opened = False
+        self._pack_cache.clear()
 
     def put(self, id, data):
         """put a repo object
@@ -1249,6 +1114,258 @@ class Repository:
             raise IntegrityError(f"More than allowed put data [{data_size} > {MAX_DATA_SIZE}]")
         # PackWriter shares this repository's index, so add() triggers the lazy build itself.
         return self._pack_writer.add(id, data)
+
+    def open(self, *, exclusive, lock_wait=None, lock=True):
+        assert lock_wait is not None
+        try:
+            self.store.open()
+        except StoreBackendDoesNotExist:
+            raise self.DoesNotExist(str(self._location)) from None
+        else:
+            self.store_opened = True
+        try:
+            readme = self.store.load("config/readme").decode()
+        except StoreObjectNotFound:
+            raise self.DoesNotExist(str(self._location)) from None
+        if readme != REPOSITORY_README:
+            raise self.InvalidRepository(str(self._location))
+        self.version = int(self.store.load("config/version").decode())
+        if self.version not in self.acceptable_repo_versions:
+            self.close()
+            raise self.InvalidRepositoryConfig(
+                str(self._location), "repository version %d is not supported by this borg version" % self.version
+            )
+        self.id = hex_to_bin(self.store.load("config/id").decode(), length=32)
+        # important: lock *after* making sure that there actually is an existing, supported repository.
+        if lock:
+            self.lock = Lock(self.store, exclusive, timeout=lock_wait).acquire()
+        self._chunks = None
+        # pack-sizing overrides: BORG_PACK_MAX_COUNT sets the max object count per pack,
+        # BORG_PACK_MAX_SIZE the max pack size in bytes. Default: size-bound only.
+        max_count_env = os.environ.get("BORG_PACK_MAX_COUNT")
+        max_size_env = os.environ.get("BORG_PACK_MAX_SIZE")
+        max_count = int(max_count_env) if max_count_env is not None else None
+        if max_size_env is not None:
+            max_size = int(max_size_env)
+        else:
+            max_size = None if max_count is not None else DEFAULT_PACK_MAX_SIZE
+        # BORG_PACK_ASYNC=no disables the background store-thread (debugging aid, see PackWriter).
+        async_store = os.environ.get("BORG_PACK_ASYNC", "yes") != "no"
+        self._pack_writer = PackWriter(
+            self.store, repository=self, max_count=max_count, max_size=max_size, async_store=async_store
+        )
+        self.opened = True
+
+    def __init__(
+        self,
+        path_or_location,
+        create=False,
+        exclusive=False,
+        lock_wait=1.0,
+        lock=True,
+        send_log_cb=None,
+        permissions=None,
+    ):
+        if isinstance(path_or_location, Location):
+            location = path_or_location
+            if location.proto == "file":
+                url = Path(location.path).as_uri()
+            else:
+                url = location.processed  # location as given by user, processed placeholders
+        else:
+            url = Path(path_or_location).absolute().as_uri()
+            location = Location(url)
+        self._location = location
+        self.url = url
+        ns_config = {
+            "archives/": {"levels": [0]},
+            "cache/": {"levels": [0]},
+            "config/": {"levels": [0]},
+            "index/": {"levels": [0]},
+            "keys/": {"levels": [0]},
+            "locks/": {"levels": [0]},
+            "packs/": {"levels": [1]},
+        }
+        # Get permissions from parameter or environment variable
+        permissions = permissions if permissions is not None else os.environ.get("BORG_REPO_PERMISSIONS", "all")
+        permissions = borg_permissions(permissions)
+
+        # writethrough cache for the packs/ namespace: on a cache miss borgstore loads the whole
+        # pack, caches it, and serves later reads of that pack's objects from the cache.
+        # packs are named by content hash, so one cache directory can hold packs from several
+        # repositories; a colliding name has identical content, so sharing is safe.
+        # BORG_STORE_CACHE sets the cache directory ("1" means <cache_dir>/storecache); the
+        # directory holds the whole store's cache, currently just the packs/ namespace.
+        # BORG_PACK_CACHE_SIZE limits the pack cache size in bytes.
+        cache_url = None
+        store_cache = os.environ.get("BORG_STORE_CACHE")
+        if store_cache:
+            if store_cache == "1":
+                cache_dir = Path(get_cache_dir("storecache"))
+            else:
+                cache_dir = Path(store_cache)
+                cache_dir.mkdir(parents=True, exist_ok=True)
+            ns_config["packs/"]["cache"] = "writethrough"
+            cache_size = os.environ.get("BORG_PACK_CACHE_SIZE")
+            if cache_size:
+                ns_config["packs/"]["size"] = int(cache_size)
+            cache_url = cache_dir.as_uri()
+
+        propagate_rsh()  # borgstore shall use the same remote shell command as borg
+
+        try:
+            if location.proto == "rest":
+                # rest:// is served by "borg serve --rest" (reachable via ssh if a host is given),
+                # talking HTTP over stdio - rather than borgstore's own "borgstore-server-rest" command.
+                # permissions are not given to the (remote) backend here; they are enforced on the
+                # server side by "borg serve --rest --permissions ...".
+                backend = build_rest_backend(location)
+                # note: borgstore >= 0.6 Store serializes all its operations internally, so the
+                # PackWriter store-thread and the main thread can share it (borgstore #206).
+                self.store = Store(backend=backend, config=ns_config, cache_url=cache_url)
+            else:
+                self.store = Store(url, config=ns_config, permissions=permissions, cache_url=cache_url)
+        except StoreBackendError as e:
+            raise Error(str(e))
+        # None means "all" (no restrictions); for rest:// the backend enforces permissions
+        # server-side, so the client does not check them (see above).
+        self.permissions = None if location.proto == "rest" else permissions
+        self.store_opened = False
+        self.version = None
+        # long-running repository methods which emit log or progress output are responsible for calling
+        # the ._send_log method periodically to get log and progress output transferred to the borg client
+        # in a timely manner, in case we have a RemoteRepository.
+        # for local repositories ._send_log can be called also (it will just do nothing in that case).
+        self._send_log = send_log_cb or (lambda: None)
+        self.do_create = create
+        self.created = False
+        self.acceptable_repo_versions = (4,)
+        self.opened = False
+        self.lock = None
+        self.do_lock = lock
+        self.lock_wait = lock_wait
+        self.exclusive = exclusive
+        self._pack_writer = None
+        self._chunks = None  # ChunkIndex; loaded lazily on first access to .chunks
+        # pack_id -> PackReader holding the whole pack; get_many loads into it, get() reuses it
+        self._pack_cache = LRUCache(capacity=self.PACK_READER_CACHE_SIZE)
+
+    def check(self, repair=False, max_duration=0):
+        """Check repository consistency.
+
+        packs/ and index/ objects are named by the sha256 of their content, so a pack or index file
+        is intact iff store.hash(name) still equals name. The whole pack is hashed; the REST backend
+        computes the hash server-side, so for it nothing is downloaded.
+
+        The index is hashed first and the packs only if it is intact. The packs could be hashed even
+        with a corrupt index, but a corrupt index already means the user has to repair it, and that
+        rebuild re-reads every pack anyway - so a read-only check just stops and reports it instead of
+        continuing. The index is never rebuilt here in any case: reading every pack to do so would be
+        far too slow and expensive for a routine (e.g. cron) check. Salvaging good objects out of
+        corrupt packs and dropping those packs is left to repair, refs #8572.
+        """
+
+        def verify(namespace, name):
+            # name is the sha256 of the object's content, so it is intact iff store.hash() matches.
+            key = f"{namespace}/{name}"
+            try:
+                ok = self.store.hash(key) == name
+            except StoreObjectNotFound:
+                return True  # vanished since store.list(); not an error
+            if not ok:
+                logger.error(f"Store object {key} is corrupted: content does not match its name (sha256).")
+            return ok
+
+        def store_list(namespace):
+            try:
+                return list(self.store.list(namespace))
+            except StoreObjectNotFound:
+                return []  # namespace does not exist
+
+        partial = bool(max_duration)
+        assert not (repair and partial)
+        mode = "partial" if partial else "full"
+        logger.info(f"Starting {mode} repository check")
+        if partial:
+            tracker = PackTracker.load(self.store)
+        else:
+            tracker = PackTracker.new(self.store)
+            tracker.clear()  # a full check verifies every pack, so discard the stored cycle
+        if len(tracker):
+            logger.info(f"Continuing check cycle, {len(tracker)} packs already checked.")
+        else:
+            logger.info("Starting from beginning.")
+        t_start = time.monotonic()
+        t_last_checkpoint = t_start
+        index_files = index_errors = 0
+        pack_files = pack_errors = 0
+        # index and packs get separate progress indicators, each running from 0% to 100%.
+        # the index is checked first and in full, on partial checks too: it is small, and index errors
+        # stop the pack check below.
+        index_infos = store_list("index")
+        # an invalid chunk index means an interrupted fragment deletion; it will be rebuilt on next
+        # use, so warn rather than verify the leftover fragments.
+        from .cache import chunkindex_is_invalid
+
+        if chunkindex_is_invalid(self):
+            logger.warning("chunk index is invalid (interrupted operation); it will be rebuilt on next use.")
+        index_pi = ProgressIndicatorPercent(total=len(index_infos), msg="Checking index %3.0f%%", msgid="check.index")
+        for info in index_infos:
+            self._lock_refresh()
+            index_pi.show(increase=1)
+            index_files += 1
+            if not verify("index", info.name):
+                index_errors += 1
+        if index_infos:
+            index_pi.show(current=len(index_infos))  # finish at 100%
+        index_pi.finish()
+        if index_errors == 0:
+            # packs are the bulk of the work and the part --max-duration spreads over several checks.
+            pack_infos = store_list("packs")
+            pack_pi = ProgressIndicatorPercent(total=len(pack_infos), msg="Checking packs %3.0f%%", msgid="check.packs")
+            for info in pack_infos:
+                self._lock_refresh()
+                pack_pi.show(increase=1)  # advance for skipped packs too, so the bar tracks packs/, not work done
+                pack_id = hex_to_bin(info.name)
+                entry = tracker.get(pack_id)
+                if entry is not None and entry.result:  # intact in this cycle; a corrupt one is verified again
+                    continue
+                pack_files += 1
+                ok = verify("packs", info.name)
+                if not ok:
+                    pack_errors += 1
+                tracker.record(pack_id, ok)
+                now = time.monotonic()
+                # a checkpoint rewrites the whole table (41 bytes per pack), so keep the interval long.
+                if now > t_last_checkpoint + 30 * 60:
+                    t_last_checkpoint = now
+                    logger.info(f"Checkpointing at pack {info.name}.")
+                    tracker.save()
+                if partial and now > t_start + max_duration:
+                    logger.info(f"Finished partial repository check, {len(tracker)} packs checked so far.")
+                    tracker.save()
+                    break
+            else:
+                # scanned all packs without hitting the time limit: the cycle is done, drop the set.
+                if pack_infos:
+                    pack_pi.show(current=len(pack_infos))  # finish at 100%
+                logger.info("Finished checking packs.")
+                tracker.clear()
+            pack_pi.finish()
+        else:
+            # TODO: --repair will rebuild the index from the packs here instead of stopping (refs #8572).
+            logger.error("Repository index is corrupted and must be repaired; skipping the pack check.")
+        objs_errors = index_errors + pack_errors
+        logger.info(
+            f"Checked {index_files} index files ({index_errors} errors) and {pack_files} packs ({pack_errors} errors)."
+        )
+        if objs_errors == 0:
+            logger.info(f"Finished {mode} repository check, no problems found.")
+        elif repair:
+            logger.error(f"Finished {mode} repository check, errors found (repository repair not implemented).")
+        else:
+            logger.error(f"Finished {mode} repository check, errors found.")
+        return objs_errors == 0 or repair
 
     def delete(self, id, *, update_index=True):
         """Delete a single repo object by rewriting its pack without it (via compact_pack).
