@@ -16,8 +16,8 @@ from statsmodels.discrete.discrete_model import (
 )
 from statsmodels.formula.formulatools import advance_eval_env
 import statsmodels.regression.linear_model as lm
-from statsmodels.tools.sm_exceptions import ModelWarning
 from scipy.special import logsumexp
+from statsmodels.tools.sm_exceptions import ModelWarning
 
 
 class _ConditionalModel(base.LikelihoodModel):
@@ -655,7 +655,6 @@ class ConditionalMNLogit(_ConditionalModel):
             grad -= denomg / denom
 
         return grad.flatten()
-
 
 
 class ConditionalResultsWrapper(lm.RegressionResultsWrapper):
