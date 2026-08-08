@@ -6,7 +6,7 @@ package amp
 // Exports for use in tests only.
 var (
 	ResourceAlertManagerDefinition      = resourceAlertManagerDefinition
-	ResourceAnomalyDetector             = newAnomalyDetectorResource
+	ResourceAnomalyDetector           = newAnomalyDetectorResource
 	ResourceQueryLoggingConfiguration   = newQueryLoggingConfigurationResource
 	ResourceRuleGroupNamespace          = resourceRuleGroupNamespace
 	ResourceScraper                     = newScraperResource
@@ -15,7 +15,7 @@ var (
 	ResourceResourcePolicy              = newResourcePolicyResource
 
 	FindAlertManagerDefinitionByID      = findAlertManagerDefinitionByID
-	FindAnomalyDetectorByID             = findAnomalyDetectorByID
+	FindAnomalyDetectorByID           = findAnomalyDetectorByID
 	FindQueryLoggingConfigurationByID   = findQueryLoggingConfigurationByID
 	FindResourcePolicyByWorkspaceID     = findResourcePolicyByWorkspaceID
 	FindRuleGroupNamespaceByARN         = findRuleGroupNamespaceByARN
