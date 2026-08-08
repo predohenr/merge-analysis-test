@@ -3,8 +3,9 @@ import ast as py_ast
 import copy
 
 import pandas as pd
-from pandas.api import types as pd_types
 from mindsdb_sql_parser.ast import ASTNode, Select, Insert, Update, Delete, Star, BinaryOperation, Function
+from pandas.api import types as pd_types
+from mindsdb_sql_parser.ast import ASTNode, Select, Insert, Update, Delete, Star, BinaryOperation
 from mindsdb_sql_parser.ast.select.identifier import Identifier
 from mindsdb_sql_parser.ast.select.constant import Constant
 
