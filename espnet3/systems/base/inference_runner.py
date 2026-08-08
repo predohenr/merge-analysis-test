@@ -236,14 +236,6 @@ class InferenceRunner(BaseRunner):
             return keys
         return [key for key in output.keys() if key != idx_key]
 
-    def _validate_output(self, output: Dict[str, Any]) -> None:
-        self._validate_output_with_keys(
-            output,
-            idx_key=self.idx_key,
-            hyp_key=self.hyp_key,
-            ref_key=self.ref_key,
-        )
-
     @staticmethod
     def forward(idx, dataset=None, model=None, **kwargs):
         """Run inference for one or more dataset items and return output dict(s).
@@ -412,6 +404,14 @@ class InferenceRunner(BaseRunner):
             encoding="utf-8",
         )
         return None
+
+    def _validate_output(self, output: Dict[str, Any]) -> None:
+        self._validate_output_with_keys(
+            output,
+            idx_key=self.idx_key,
+            hyp_key=self.hyp_key,
+            ref_key=self.ref_key,
+        )
 
     def merge(self, shard_dirs: List[Path]) -> Optional[Dict[str, Any]]:
         """Merge per-shard SCP files into the test-set output directory.
