@@ -432,6 +432,32 @@ func TestAccDSDirectory_desiredNumberOfDomainControllers(t *testing.T) {
 	})
 }
 
+func testAccCheckDirectoryDestroy(ctx context.Context, t *testing.T) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		conn := acctest.ProviderMeta(ctx, t).DSClient(ctx)
+
+		for _, rs := range s.RootModule().Resources {
+			if rs.Type != "aws_directory_service_directory" {
+				continue
+			}
+
+			_, err := tfds.FindDirectoryByID(ctx, conn, rs.Primary.ID)
+
+			if retry.NotFound(err) {
+				continue
+			}
+
+			if err != nil {
+				return err
+			}
+
+			return fmt.Errorf("Directory Service Directory %s still exists", rs.Primary.ID)
+		}
+
+		return nil
+	}
+}
+
 func TestAccDSDirectory_enableDirectoryDataAccess(t *testing.T) {
 	ctx := acctest.Context(t)
 	var ds awstypes.DirectoryDescription
@@ -495,7 +521,7 @@ func TestAccDSDirectory_enableDirectoryDataAccess(t *testing.T) {
 	})
 }
 
-func testAccCheckDirectoryDestroy(ctx context.Context, t *testing.T) resource.TestCheckFunc {
+func testAccCheckDirectoryDestroy(ctx context.Context) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		conn := acctest.ProviderMeta(ctx, t).DSClient(ctx)
 
