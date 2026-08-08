@@ -287,6 +287,48 @@ func TestAccQuickSightDataSource_s3RoleARN(t *testing.T) {
 	})
 }
 
+func testAccCheckDataSourceExists(ctx context.Context, t *testing.T, n string, v *awstypes.DataSource) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		conn := acctest.ProviderMeta(ctx, t).QuickSightClient(ctx)
+
+		output, err := tfquicksight.FindDataSourceByTwoPartKey(ctx, conn, rs.Primary.Attributes[names.AttrAWSAccountID], rs.Primary.Attributes["data_source_id"])
+
+		if err != nil {
+			return err
+		}
+
+		*v = *output
+
+		return nil
+	}
+}
+
+func testAccCheckDataSourceExists(ctx context.Context, n string, v *awstypes.DataSource) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		conn := acctest.ProviderMeta(ctx, t).QuickSightClient(ctx)
+
+		output, err := tfquicksight.FindDataSourceByTwoPartKey(ctx, conn, rs.Primary.Attributes[names.AttrAWSAccountID], rs.Primary.Attributes["data_source_id"])
+
+		if err != nil {
+			return err
+		}
+
+		*v = *output
+
+		return nil
+	}
+}
+
 func TestAccQuickSightDataSource_athenaRoleARN(t *testing.T) {
 	ctx := acctest.Context(t)
 	var dataSource awstypes.DataSource
@@ -333,27 +375,6 @@ func TestAccQuickSightDataSource_athenaRoleARN(t *testing.T) {
 			},
 		},
 	})
-}
-
-func testAccCheckDataSourceExists(ctx context.Context, t *testing.T, n string, v *awstypes.DataSource) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[n]
-		if !ok {
-			return fmt.Errorf("Not found: %s", n)
-		}
-
-		conn := acctest.ProviderMeta(ctx, t).QuickSightClient(ctx)
-
-		output, err := tfquicksight.FindDataSourceByTwoPartKey(ctx, conn, rs.Primary.Attributes[names.AttrAWSAccountID], rs.Primary.Attributes["data_source_id"])
-
-		if err != nil {
-			return err
-		}
-
-		*v = *output
-
-		return nil
-	}
 }
 
 func testAccCheckDataSourceDestroy(ctx context.Context, t *testing.T) resource.TestCheckFunc {
