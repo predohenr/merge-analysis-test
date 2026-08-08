@@ -3328,6 +3328,32 @@ eval_jaxpr_p.def_effectful_abstract_eval(
 # matches on these names when interpreting jaxprs.
 call_p = closed_call_p = eval_jaxpr_p
 
+def CallPrimitive(name: str) -> Primitive:
+  from jax._src import checkify  # pyrefly: ignore[missing-import]
+  from jax._src.interpreters import ad, batching, mlir  # pyrefly: ignore[missing-import]
+  from jax._src.interpreters import partial_eval as pe  # pyrefly: ignore[missing-import]
+  from jax._src.lax import eval_jaxpr  # pyrefly: ignore[missing-import]
+  from jax._src.state import discharge  # pyrefly: ignore[missing-import]
+  prim = Primitive(name)
+  prim.multiple_results = True
+  # some rules are generic and ignore params
+  prim.def_impl(eval_jaxpr_p.impl)
+  prim.def_effectful_abstract_eval(eval_jaxpr_p.abstract_eval)
+  custom_typechecks[prim] = custom_typechecks[eval_jaxpr_p]
+  mlir.register_lowering(prim, partial(mlir.core_call_lowering, name=name), cacheable=False)
+  checkify.error_checks[prim] = checkify.error_checks[eval_jaxpr_p]
+  # others are generic and bind `prim`, passing through params
+  prim.to_lojax = partial(pe._eval_jaxpr_to_lojax, prim)
+  ad.primitive_jvps[prim] = partial(eval_jaxpr._eval_jaxpr_jvp, prim)
+  ad.primitive_linearizations[prim] = partial(eval_jaxpr._eval_jaxpr_linearize, prim)
+  ad.fancy_transposes[prim] = partial(eval_jaxpr._eval_jaxpr_transpose, prim)
+  batching.fancy_primitive_batchers[prim] = partial(eval_jaxpr._eval_jaxpr_batch, prim)
+  pe.custom_partial_eval_rules[prim] = partial(pe._eval_jaxpr_partial_eval, prim)
+  pe.partial_eval_jaxpr_custom_rules[prim] = pe.partial_eval_jaxpr_custom_rules[eval_jaxpr_p]
+  pe.dce_rules[prim] = pe.dce_rules[eval_jaxpr_p]
+  discharge.register_discharge_rule(prim)(partial(discharge._eval_jaxpr_discharge_rule, prim))
+  return prim
+ClosedCallPrimitive = CallPrimitive
 
 # ------------------- Map -------------------
 
