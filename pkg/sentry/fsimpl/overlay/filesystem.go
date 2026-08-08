@@ -896,13 +896,7 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 		return nil
 	}
 
-	if !ats.MayWrite() {
-		return nil
-	}
-	if !d.upperVD.Ok() && !d.canBeCopiedUp() {
-		return linuxerr.EPERM
-	}
-	if linux.FileMode(d.mode.Load()).IsSpecialFile() {
+	if !ats.MayWrite() || linux.FileMode(d.mode.Load()).IsSpecialFile() {
 		return nil
 	}
 
