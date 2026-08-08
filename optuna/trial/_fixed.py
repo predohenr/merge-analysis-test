@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import datetime
 import math
+from optuna.distributions import CategoricalDistribution
+from optuna.distributions import IntDistribution
+from optuna.distributions import FloatDistribution
+from optuna.study._constrained_optimization import _get_constraints_from_system_attrs
 from typing import Any
-from typing import overload
-from typing import TYPE_CHECKING
-
 from optuna import distributions
+from typing import overload
 from optuna._deprecated import deprecated_func
 from optuna._warnings import optuna_warn
-from optuna.distributions import CategoricalDistribution
-from optuna.distributions import FloatDistribution
-from optuna.distributions import IntDistribution
+from typing import TYPE_CHECKING
 from optuna.study._constrained_optimization import _CONSTRAINTS_KEY
 from optuna.trial._base import BaseTrial
 

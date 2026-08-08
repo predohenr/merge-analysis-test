@@ -2,23 +2,23 @@ from __future__ import annotations
 
 from collections import UserDict
 import copy
+from optuna import logging
 import math
-from typing import Any
+from optuna.distributions import CategoricalDistribution
+from optuna.distributions import CategoricalChoiceType
+from optuna.distributions import FloatDistribution
+from optuna.distributions import BaseDistribution
+from optuna._warnings import optuna_warn
+import optuna
+from optuna import pruners
+from optuna.distributions import IntDistribution
+from optuna._deprecated import deprecated_func
+from optuna import distributions
 from typing import overload
 from typing import TYPE_CHECKING
-
-import optuna
-from optuna import distributions
-from optuna import logging
-from optuna import pruners
-from optuna._deprecated import deprecated_func
-from optuna._warnings import optuna_warn
-from optuna.distributions import BaseDistribution
-from optuna.distributions import CategoricalChoiceType
-from optuna.distributions import CategoricalDistribution
-from optuna.distributions import FloatDistribution
-from optuna.distributions import IntDistribution
 from optuna.study._constrained_optimization import _CONSTRAINTS_KEY
+from optuna.study._constrained_optimization import _get_constraints_from_system_attrs
+from typing import Any
 from optuna.trial._base import BaseTrial
 
 
