@@ -186,6 +186,63 @@ class Order(ModelBase):
             / FtPrecise(self.trade.leverage)
         )
 
+    @staticmethod
+    def update_orders(orders: list["Order"], order: CcxtOrder):
+        """
+        Get all non-closed orders - useful when trying to batch-update orders
+        """
+        if not isinstance(order, dict):
+            logger.warning(f"{order} is not a valid response object.")
+            return
+
+        filtered_orders = [o for o in orders if o.order_id == order.get("id")]
+        if filtered_orders:
+            oobj = filtered_orders[0]
+            oobj.update_from_ccxt_object(order)
+            Trade.commit()
+        else:
+            logger.warning(f"Did not find order for {order}.")
+
+    @classmethod
+    def parse_from_ccxt_object(
+        cls,
+        order: CcxtOrder,
+        pair: str,
+        side: str,
+        amount: float | None = None,
+        price: float | None = None,
+    ) -> Self:
+        """
+        Parse an order from a ccxt object and return a new order Object.
+        Optional support for overriding amount and price is only used for test simplification.
+        """
+        o = cls(
+            order_id=str(order["id"]),
+            ft_order_side=side,
+            ft_pair=pair,
+            ft_amount=amount or order.get("amount", None) or 0.0,
+            ft_price=price or order.get("price", None),
+        )
+
+        o.update_from_ccxt_object(order)
+        return o
+
+    @staticmethod
+    def get_open_orders() -> Sequence["Order"]:
+        """
+        Retrieve open orders from the database
+        :return: List of open orders
+        """
+        return Order.session.scalars(select(Order).filter(Order.ft_is_open.is_(True))).all()
+
+    @staticmethod
+    def order_by_id(order_id: str) -> Optional["Order"]:
+        """
+        Retrieve order based on order_id
+        :return: Order or None
+        """
+        return Order.session.scalars(select(Order).filter(Order.order_id == order_id)).first()
+
     def __repr__(self):
         return (
             f"Order(id={self.id}, trade={self.ft_trade_id}, order_id={self.order_id}, "
@@ -319,63 +376,6 @@ class Order(ModelBase):
                 trade.initial_stop_loss_pct = None
                 trade.is_stop_loss_trailing = False
             trade.adjust_stop_loss(trade.open_rate, trade.stop_loss_pct)
-
-    @staticmethod
-    def update_orders(orders: list["Order"], order: CcxtOrder):
-        """
-        Get all non-closed orders - useful when trying to batch-update orders
-        """
-        if not isinstance(order, dict):
-            logger.warning(f"{order} is not a valid response object.")
-            return
-
-        filtered_orders = [o for o in orders if o.order_id == order.get("id")]
-        if filtered_orders:
-            oobj = filtered_orders[0]
-            oobj.update_from_ccxt_object(order)
-            Trade.commit()
-        else:
-            logger.warning(f"Did not find order for {order}.")
-
-    @classmethod
-    def parse_from_ccxt_object(
-        cls,
-        order: CcxtOrder,
-        pair: str,
-        side: str,
-        amount: float | None = None,
-        price: float | None = None,
-    ) -> Self:
-        """
-        Parse an order from a ccxt object and return a new order Object.
-        Optional support for overriding amount and price is only used for test simplification.
-        """
-        o = cls(
-            order_id=str(order["id"]),
-            ft_order_side=side,
-            ft_pair=pair,
-            ft_amount=amount or order.get("amount", None) or 0.0,
-            ft_price=price or order.get("price", None),
-        )
-
-        o.update_from_ccxt_object(order)
-        return o
-
-    @staticmethod
-    def get_open_orders() -> Sequence["Order"]:
-        """
-        Retrieve open orders from the database
-        :return: List of open orders
-        """
-        return Order.session.scalars(select(Order).filter(Order.ft_is_open.is_(True))).all()
-
-    @staticmethod
-    def order_by_id(order_id: str) -> Optional["Order"]:
-        """
-        Retrieve order based on order_id
-        :return: Order or None
-        """
-        return Order.session.scalars(select(Order).filter(Order.order_id == order_id)).first()
 
 
 class LocalTrade:
@@ -1787,15 +1787,6 @@ class Trade(ModelBase, LocalTrade):
             return value[:max_len]
         return value
 
-    def delete(self) -> None:
-        for order in self.orders:
-            Order.session.delete(order)
-
-        CustomDataWrapper.delete_custom_data(trade_id=self.id)
-
-        Trade.session.delete(self)
-        Trade.commit()
-
     @staticmethod
     def commit():
         Trade.session.commit()
@@ -2161,3 +2152,12 @@ class Trade(ModelBase, LocalTrade):
             .filter(*trade_filter)
         ).scalar_one()
         return trading_volume or 0.0
+
+    def delete(self) -> None:
+        for order in self.orders:
+            Order.session.delete(order)
+
+        CustomDataWrapper.delete_custom_data(trade_id=self.id)
+
+        Trade.session.delete(self)
+        Trade.commit()
