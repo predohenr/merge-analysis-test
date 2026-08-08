@@ -1270,28 +1270,31 @@ resource "aws_ecs_capacity_provider" "test" {
 `, rName, monitoring))
 }
 
-func testAccCapacityProviderConfig_managedInstancesProvider_withLocalStorageConfiguration(rName string) string {
-	return acctest.ConfigCompose(testAccCapacityProviderConfig_managedInstancesProvider_base(rName), fmt.Sprintf(`
+func testAccCapacityProviderConfig_withClusterAssociation(rName string) string {
+	return acctest.ConfigCompose(testAccCapacityProviderConfig_base(rName), fmt.Sprintf(`
+resource "aws_ecs_cluster" "test" {
+  name = %[1]q
+}
+
 resource "aws_ecs_capacity_provider" "test" {
-  name    = %[1]q
-  cluster = aws_ecs_cluster.test.name
+  name = %[1]q
 
-  managed_instances_provider {
-    infrastructure_role_arn = aws_iam_role.test.arn
-
-    instance_launch_template {
-      ec2_instance_profile_arn = aws_iam_instance_profile.test.arn
-
-      network_configuration {
-        subnets         = aws_subnet.test[*].id
-        security_groups = [aws_security_group.test.id]
-      }
-
-      local_storage_configuration {
-        use_local_storage = true
-      }
-    }
+  auto_scaling_group_provider {
+    auto_scaling_group_arn = aws_autoscaling_group.test.arn
   }
+}
+
+resource "aws_ecs_cluster_capacity_providers" "test" {
+  cluster_name       = aws_ecs_cluster.test.name
+  capacity_providers = [aws_ecs_capacity_provider.test.name]
+}
+`, rName))
+}
+
+func testAccCapacityProviderConfig_withClusterNoAssociationRemoved(rName string) string {
+	return acctest.ConfigCompose(testAccCapacityProviderConfig_base(rName), fmt.Sprintf(`
+resource "aws_ecs_cluster" "test" {
+  name = %[1]q
 }
 `, rName))
 }
@@ -1326,31 +1329,28 @@ resource "aws_ecs_capacity_provider" "test" {
 `, rName))
 }
 
-func testAccCapacityProviderConfig_withClusterNoAssociationRemoved(rName string) string {
-	return acctest.ConfigCompose(testAccCapacityProviderConfig_base(rName), fmt.Sprintf(`
-resource "aws_ecs_cluster" "test" {
-  name = %[1]q
-}
-`, rName))
-}
-
-func testAccCapacityProviderConfig_withClusterAssociation(rName string) string {
-	return acctest.ConfigCompose(testAccCapacityProviderConfig_base(rName), fmt.Sprintf(`
-resource "aws_ecs_cluster" "test" {
-  name = %[1]q
-}
-
+func testAccCapacityProviderConfig_managedInstancesProvider_withLocalStorageConfiguration(rName string) string {
+	return acctest.ConfigCompose(testAccCapacityProviderConfig_managedInstancesProvider_base(rName), fmt.Sprintf(`
 resource "aws_ecs_capacity_provider" "test" {
-  name = %[1]q
+  name    = %[1]q
+  cluster = aws_ecs_cluster.test.name
 
-  auto_scaling_group_provider {
-    auto_scaling_group_arn = aws_autoscaling_group.test.arn
+  managed_instances_provider {
+    infrastructure_role_arn = aws_iam_role.test.arn
+
+    instance_launch_template {
+      ec2_instance_profile_arn = aws_iam_instance_profile.test.arn
+
+      network_configuration {
+        subnets         = aws_subnet.test[*].id
+        security_groups = [aws_security_group.test.id]
+      }
+
+      local_storage_configuration {
+        use_local_storage = true
+      }
+    }
   }
-}
-
-resource "aws_ecs_cluster_capacity_providers" "test" {
-  cluster_name       = aws_ecs_cluster.test.name
-  capacity_providers = [aws_ecs_capacity_provider.test.name]
 }
 `, rName))
 }
