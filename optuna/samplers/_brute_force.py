@@ -113,6 +113,13 @@ class _TreeNode:
             return 1
         return sum(child.count_total_combinations() for child in self.children.values())
 
+    def count_unexpanded(self, exclude_running: bool) -> int:
+        # Count the number of unexpanded nodes in the subtree.
+        if (children := self.children) is None:
+            return 0 if exclude_running and self.is_running else 1
+        else:
+            return sum(child.count_unexpanded(exclude_running) for child in self.children.values())
+
     def sample_child(self, rng: np.random.RandomState, exclude_running: bool) -> float:
         assert (children := self.children) is not None
         unexpanded_counts = np.array(
