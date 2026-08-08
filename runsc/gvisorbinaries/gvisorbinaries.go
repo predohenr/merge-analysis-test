@@ -69,10 +69,9 @@ import (
 
 // Sidecar binary filenames under the "gvisor-bin/" directory.
 const (
-	metricServerName            = "runsc-metric-server"
-	checkpointGoferName         = "checkpointgofer"
-	gvisorSentryName            = "gvisor_sentry"
-	gvisorSentryPluginStackName = "gvisor_sentry_plugin_stack"
+	metricServerName    = "runsc-metric-server"
+	checkpointGoferName = "checkpointgofer"
+	gvisorSentryName    = "gvisor_sentry"
 )
 
 // binDirName is the name of the directory holding sidecar binaries.
@@ -95,9 +94,6 @@ const (
 	enforceReleaseSkip         = "SKIP"
 	enforceReleaseTestonlySkip = "TESTONLY_SKIP"
 )
-
-// Special release name used in CI that is also ignored.
-const buildkiteTestVersion = "buildkite-test-branch-dirty"
 
 // cutSkip returns the expected release embedded in `val` (env var).
 func cutSkip(val, prefix string) (string, bool) {
@@ -179,10 +175,6 @@ func VerifyMatchingRelease(b *Binary) {
 	if b == nil {
 		return
 	}
-	if got == buildkiteTestVersion {
-		log.Infof("Sidecar release match check not enforced%s; this build is %q.", who, got)
-		return
-	}
 	var msg string
 	info := testOnly
 	switch want {
@@ -213,13 +205,9 @@ var (
 	CheckpointGofer = Binary{Name: checkpointGoferName}
 	// GvisorSentry is the sentry (kernel) sidecar binary.
 	GvisorSentry = Binary{Name: gvisorSentryName}
-	// GvisorSentryPluginStack is the sentry sidecar binary with a plugin
-	// network stack linked in.
-	// Only present in plugin-enabled installations, so not part of `All`.
-	GvisorSentryPluginStack = Binary{Name: gvisorSentryPluginStackName}
 )
 
-// All lists every sidecar present in a standard installation.
+// All lists every known sidecar.
 var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry}
 
 // Options is the set of options used to execute a sidecar binary.
@@ -278,10 +266,6 @@ var (
 // resolveDir resolves the directory in which sidecar binaries are located.
 func resolveDir() (string, error) {
 	if dir := os.Getenv(sidecarBinariesDirEnv); dir != "" {
-		return dir, nil
-	}
-	dir := filepath.Join(filepath.Dir(specutils.ExePath), binDirName)
-	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 		return dir, nil
 	}
 	exe, err := filepath.EvalSymlinks(specutils.ExePath)
