@@ -16,7 +16,6 @@ from tornado.httputil import url_concat
 from .. import __version__, orm
 from ..metrics import SERVER_POLL_DURATION_SECONDS, ServerPollStatus
 from ..scopes import describe_raw_scopes, needs_scope
-from ..slugs import is_valid_safe_slug
 from ..spawner import SpawnException
 from ..utils import (
     format_exception,
@@ -25,6 +24,7 @@ from ..utils import (
     url_path_join,
     utcnow,
 )
+from ..slugs import is_valid_safe_slug
 from .base import BaseHandler
 
 

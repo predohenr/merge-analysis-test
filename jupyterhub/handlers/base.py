@@ -49,6 +49,8 @@ from ..metrics import (
 )
 from ..objects import Server
 from ..spawner import LocalProcessSpawner, SpawnException
+from ..spawner import LocalProcessSpawner
+from ..slugs import is_valid_display_name, is_valid_safe_slug, normalise_unicode
 from ..user import User
 from ..utils import (
     AnyTimeoutError,
@@ -196,17 +198,6 @@ class BaseHandler(RequestHandler):
     def eventlog(self):
         return self.settings['eventlog']
 
-    def finish(self, *args, **kwargs):
-        """Roll back any uncommitted transactions from the handler."""
-        if self.db.dirty:
-            self.log.warning("Rolling back dirty objects %s", self.db.dirty)
-            self.db.rollback()
-        super().finish(*args, **kwargs)
-
-    # ---------------------------------------------------------------
-    # Security policies
-    # ---------------------------------------------------------------
-
     @property
     def csp_report_uri(self):
         return self.settings.get(
@@ -226,36 +217,6 @@ class BaseHandler(RequestHandler):
         return '; '.join(
             ["frame-ancestors 'none'", "report-uri " + self.csp_report_uri]
         )
-
-    def get_content_type(self):
-        return 'text/html'
-
-    def set_default_headers(self):
-        """
-        Set any headers passed as tornado_settings['headers'].
-
-        Also responsible for setting content-type header
-        """
-        # wrap in HTTPHeaders for case-insensitivity
-        headers = HTTPHeaders(self.settings.get('headers', {}))
-        headers.setdefault("X-JupyterHub-Version", __version__)
-
-        for header_name, header_content in headers.items():
-            self.set_header(header_name, header_content)
-
-        if 'Access-Control-Allow-Headers' not in headers:
-            self.set_header(
-                'Access-Control-Allow-Headers', 'accept, content-type, authorization'
-            )
-        if 'Content-Security-Policy' not in headers:
-            self.set_header('Content-Security-Policy', self.content_security_policy)
-        self.set_header('Content-Type', self.get_content_type())
-
-    # ---------------------------------------------------------------
-    # Login and cookie-related
-    # ---------------------------------------------------------------
-
-    _xsrf_safe_methods = {"GET", "HEAD", "OPTIONS"}
 
     @property
     def _xsrf_token_id(self):
@@ -306,18 +267,6 @@ class BaseHandler(RequestHandler):
         """
         return get_xsrf_token(self, cookie_path=self.hub.base_url)
 
-    def check_xsrf_cookie(self):
-        """Check that xsrf cookie matches xsrf token in request"""
-        # overrides tornado's implementation
-        # because we changed what a correct value should be in xsrf_token
-
-        if not hasattr(self, "_jupyterhub_user"):
-            # run too early to check the value
-            # tornado runs this before 'prepare',
-            # but we run it again after so auth info is available, which happens in 'prepare'
-            return None
-        return check_xsrf_cookie(self)
-
     @property
     def admin_users(self):
         return self.settings.setdefault('admin_users', set())
@@ -333,6 +282,153 @@ class BaseHandler(RequestHandler):
     @property
     def authenticate_prometheus(self):
         return self.settings.get('authenticate_prometheus', True)
+
+    @functools.lru_cache
+    def get_token(self):
+        """get token from authorization header"""
+        token = self.get_auth_token()
+        if token is None:
+            return None
+        orm_token = orm.APIToken.find(self.db, token)
+        return orm_token
+
+    @functools.lru_cache
+    def get_scope_filter(self, req_scope):
+        """Produce a filter function for req_scope on resources
+
+        Returns `has_access_to(orm_resource, kind)` which returns True or False
+        for whether the current request has access to req_scope on the given resource.
+        """
+
+        def no_access(orm_resource, kind):
+            return False
+
+        if req_scope not in self.parsed_scopes:
+            return no_access
+
+        sub_scope = self.parsed_scopes[req_scope]
+
+        return functools.partial(scopes.check_scope_filter, sub_scope)
+
+    @property
+    def current_user(self):
+        """Override .current_user accessor from tornado
+
+        Allows .get_current_user to be async.
+        """
+        if not hasattr(self, '_jupyterhub_user'):
+            raise RuntimeError("Must call async get_current_user first!")
+        return self._jupyterhub_user
+
+    @property
+    def slow_spawn_timeout(self):
+        return self.settings.get('slow_spawn_timeout', 10)
+
+    @property
+    def slow_stop_timeout(self):
+        return self.settings.get('slow_stop_timeout', 10)
+
+    @property
+    def spawner_class(self):
+        return self.settings.get('spawner_class', LocalProcessSpawner)
+
+    @property
+    def concurrent_spawn_limit(self):
+        return self.settings.get('concurrent_spawn_limit', 0)
+
+    @property
+    def active_server_limit(self):
+        return self.settings.get('active_server_limit', 0)
+
+    @property
+    def spawn_home_error(self):
+        """Extra message pointing users to try spawning again from /hub/home.
+
+        Should be added to `self.extra_error_html` for any handler
+        that could serve a failed spawn message.
+        """
+        home = url_path_join(self.hub.base_url, 'home')
+        return (
+            "You can try restarting your server from the "
+            f"<a href='{home}'>home page</a>."
+        )
+
+    @property
+    def template_namespace(self):
+        user = self.current_user
+        ns = dict(
+            base_url=self.hub.base_url,
+            prefix=self.base_url,
+            user=user,
+            login_url=self.settings['login_url'],
+            login_service=self.authenticator.login_service,
+            logout_url=self.settings['logout_url'],
+            static_url=self.static_url,
+            version_hash=self.version_hash,
+            services=self.get_accessible_services(user),
+            parsed_scopes=self.parsed_scopes,
+            expanded_scopes=self.expanded_scopes,
+            xsrf=self.xsrf_token.decode('ascii'),
+        )
+        if self.settings['template_vars']:
+            for key, value in self.settings['template_vars'].items():
+                if callable(value):
+                    value = value(user)
+                ns[key] = value
+        return ns
+
+    def finish(self, *args, **kwargs):
+        """Roll back any uncommitted transactions from the handler."""
+        if self.db.dirty:
+            self.log.warning("Rolling back dirty objects %s", self.db.dirty)
+            self.db.rollback()
+        super().finish(*args, **kwargs)
+
+    # ---------------------------------------------------------------
+    # Security policies
+    # ---------------------------------------------------------------
+
+    def get_content_type(self):
+        return 'text/html'
+
+    def set_default_headers(self):
+        """
+        Set any headers passed as tornado_settings['headers'].
+
+        Also responsible for setting content-type header
+        """
+        # wrap in HTTPHeaders for case-insensitivity
+        headers = HTTPHeaders(self.settings.get('headers', {}))
+        headers.setdefault("X-JupyterHub-Version", __version__)
+
+        for header_name, header_content in headers.items():
+            self.set_header(header_name, header_content)
+
+        if 'Access-Control-Allow-Headers' not in headers:
+            self.set_header(
+                'Access-Control-Allow-Headers', 'accept, content-type, authorization'
+            )
+        if 'Content-Security-Policy' not in headers:
+            self.set_header('Content-Security-Policy', self.content_security_policy)
+        self.set_header('Content-Type', self.get_content_type())
+
+    # ---------------------------------------------------------------
+    # Login and cookie-related
+    # ---------------------------------------------------------------
+
+    _xsrf_safe_methods = {"GET", "HEAD", "OPTIONS"}
+
+    def check_xsrf_cookie(self):
+        """Check that xsrf cookie matches xsrf token in request"""
+        # overrides tornado's implementation
+        # because we changed what a correct value should be in xsrf_token
+
+        if not hasattr(self, "_jupyterhub_user"):
+            # run too early to check the value
+            # tornado runs this before 'prepare',
+            # but we run it again after so auth info is available, which happens in 'prepare'
+            return None
+        return check_xsrf_cookie(self)
 
     async def get_current_user_named_server_limit(self):
         """
@@ -439,15 +535,6 @@ class BaseHandler(RequestHandler):
             auth_info['auth_state'] = await user.get_auth_state()
         return await self.auth_to_user(auth_info, user)
 
-    @functools.lru_cache
-    def get_token(self):
-        """get token from authorization header"""
-        token = self.get_auth_token()
-        if token is None:
-            return None
-        orm_token = orm.APIToken.find(self.db, token)
-        return orm_token
-
     def get_current_user_token(self):
         """get_current_user from Authorization header token"""
         # record token activity
@@ -546,37 +633,9 @@ class BaseHandler(RequestHandler):
                 self.expanded_scopes = scopes.get_scopes_for(self.current_user)
         self.parsed_scopes = scopes.parse_scopes(self.expanded_scopes)
 
-    @functools.lru_cache
-    def get_scope_filter(self, req_scope):
-        """Produce a filter function for req_scope on resources
-
-        Returns `has_access_to(orm_resource, kind)` which returns True or False
-        for whether the current request has access to req_scope on the given resource.
-        """
-
-        def no_access(orm_resource, kind):
-            return False
-
-        if req_scope not in self.parsed_scopes:
-            return no_access
-
-        sub_scope = self.parsed_scopes[req_scope]
-
-        return functools.partial(scopes.check_scope_filter, sub_scope)
-
     def has_scope(self, scope):
         """Is the current request being made with the given scope?"""
         return scopes.has_scope(scope, self.parsed_scopes, db=self.db)
-
-    @property
-    def current_user(self):
-        """Override .current_user accessor from tornado
-
-        Allows .get_current_user to be async.
-        """
-        if not hasattr(self, '_jupyterhub_user'):
-            raise RuntimeError("Must call async get_current_user first!")
-        return self._jupyterhub_user
 
     def find_user(self, name):
         """Get a user by name
@@ -1004,26 +1063,6 @@ class BaseHandler(RequestHandler):
     # spawning-related
     # ---------------------------------------------------------------
 
-    @property
-    def slow_spawn_timeout(self):
-        return self.settings.get('slow_spawn_timeout', 10)
-
-    @property
-    def slow_stop_timeout(self):
-        return self.settings.get('slow_stop_timeout', 10)
-
-    @property
-    def spawner_class(self):
-        return self.settings.get('spawner_class', LocalProcessSpawner)
-
-    @property
-    def concurrent_spawn_limit(self):
-        return self.settings.get('concurrent_spawn_limit', 0)
-
-    @property
-    def active_server_limit(self):
-        return self.settings.get('active_server_limit', 0)
-
     async def spawn_single_user(
         self, user, server_name='', display_name='', options=None
     ):
@@ -1447,19 +1486,6 @@ class BaseHandler(RequestHandler):
     # template rendering
     # ---------------------------------------------------------------
 
-    @property
-    def spawn_home_error(self):
-        """Extra message pointing users to try spawning again from /hub/home.
-
-        Should be added to `self.extra_error_html` for any handler
-        that could serve a failed spawn message.
-        """
-        home = url_path_join(self.hub.base_url, 'home')
-        return (
-            "You can try restarting your server from the "
-            f"<a href='{home}'>home page</a>."
-        )
-
     def get_template(self, name, sync=False):
         """
         Return the jinja template object for a given name
@@ -1491,30 +1517,6 @@ class BaseHandler(RequestHandler):
             return template.render(**template_ns)
         else:
             return template.render_async(**template_ns)
-
-    @property
-    def template_namespace(self):
-        user = self.current_user
-        ns = dict(
-            base_url=self.hub.base_url,
-            prefix=self.base_url,
-            user=user,
-            login_url=self.settings['login_url'],
-            login_service=self.authenticator.login_service,
-            logout_url=self.settings['logout_url'],
-            static_url=self.static_url,
-            version_hash=self.version_hash,
-            services=self.get_accessible_services(user),
-            parsed_scopes=self.parsed_scopes,
-            expanded_scopes=self.expanded_scopes,
-            xsrf=self.xsrf_token.decode('ascii'),
-        )
-        if self.settings['template_vars']:
-            for key, value in self.settings['template_vars'].items():
-                if callable(value):
-                    value = value(user)
-                ns[key] = value
-        return ns
 
     def get_accessible_services(self, user):
         accessible_services = []

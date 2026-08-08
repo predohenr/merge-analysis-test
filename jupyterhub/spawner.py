@@ -407,7 +407,7 @@ class Spawner(LoggingConfigurable):
         Example:
 
             The following example config will:
-    
+
             1. Add the environment variable "AM_I_GROUP_ALPHA" to everyone in the "group-alpha" group
             2. Add the environment variable "AM_I_GROUP_BETA" to everyone in the "group-beta" group.
                If a user is part of both "group-beta" and "group-alpha", they will get *both* these env
