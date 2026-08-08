@@ -34,6 +34,23 @@ import (
 	v1 "github.com/crossplane/crossplane/apis/v2/pkg/v1"
 	"github.com/crossplane/crossplane/apis/v2/pkg/v1beta1"
 )
+import (
+	"context"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
+
+	extv1alpha1 "github.com/crossplane/crossplane/apis/v2/apiextensions/v1alpha1"
+	pkgmetav1 "github.com/crossplane/crossplane/apis/v2/pkg/meta/v1"
+	v1 "github.com/crossplane/crossplane/apis/v2/pkg/v1"
+	"github.com/crossplane/crossplane/apis/v2/pkg/v1beta1"
+)
 
 const (
 	// ContainerName is the name of the package runtime container.
