@@ -393,8 +393,28 @@ func newMockEC2Client(ec2Data *ec2DataStore) *mockEC2Client {
 	return &client
 }
 
+func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(aws.Context, *ec2.DescribeAvailabilityZonesInput, ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
+	if len(m.ec2Data.azToAZID) == 0 {
+		return nil, errors.New("No AZs found")
+	}
 
-func (m *mockEC2Client) DescribeAvailabilityZones(context.Context, *ec2.DescribeAvailabilityZonesInput, ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+	azs := make([]ec2Types.AvailabilityZone, len(m.ec2Data.azToAZID))
+
+	i := 0
+	for k, v := range m.ec2Data.azToAZID {
+		azs[i] = ec2Types.AvailabilityZone{
+			ZoneName: strptr(k),
+			ZoneId:   strptr(v),
+		}
+		i++
+	}
+
+	return &ec2.DescribeAvailabilityZonesOutput{
+		AvailabilityZones: azs,
+	}, nil
+}
+
+func (m *mockEC2Client) DescribeAvailabilityZones(_ context.Context, _ *ec2.DescribeAvailabilityZonesInput, _ ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
 	if len(m.ec2Data.azToAZID) == 0 {
 		return nil, errors.New("No AZs found")
 	}
