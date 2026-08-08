@@ -298,6 +298,9 @@ class EdgeChrome:
             self.form.Show()
             self.form.Activate()
 
+    def on_navigation_start(self, sender, args):
+        pass
+
     def on_web_resource_response(self, sender, args):
         headers = {}
         for header in args.Response.Headers.GetEnumerator():
