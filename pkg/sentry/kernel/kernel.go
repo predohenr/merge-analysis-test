@@ -1558,12 +1558,9 @@ func (k *Kernel) incRunningTasks() {
 
 		// Transition from 0 -> 1.
 		k.runningTasksMu.Lock()
-		if tasks := k.runningTasks.Load(); tasks != 0 {
+		if k.runningTasks.Load() != 0 {
 			// Raced with another transition and lost.
-			if !k.runningTasks.CompareAndSwap(tasks, tasks+1) {
-				k.runningTasksMu.Unlock()
-				continue
-			}
+			k.runningTasks.Add(1)
 			k.runningTasksMu.Unlock()
 			return
 		}
