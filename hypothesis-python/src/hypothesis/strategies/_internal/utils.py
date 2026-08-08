@@ -16,6 +16,9 @@ from typing import Literal, TypeAlias, TypeVar
 from weakref import WeakValueDictionary
 
 from hypothesis.errors import InvalidArgument
+
+import attr
+
 from hypothesis.internal.cache import LRUReusedCache
 from hypothesis.internal.floats import clamp, float_to_int
 from hypothesis.internal.reflection import proxies
