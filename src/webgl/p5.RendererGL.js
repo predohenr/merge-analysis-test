@@ -131,16 +131,65 @@ class RendererGL extends Renderer3D {
     this._cachedBlendMode = undefined;
   }
 
-  setupContext() {
-    this._setAttributeDefaults(this._pInst);
-    this._initContext();
-    // This redundant property is useful in reminding you that you are
-    // interacting with WebGLRenderingContext, still worth considering future removal
-    this.GL = this.drawingContext;
+  // Pass this off to the host instance so that we can treat a renderer and a
+
+  _shaderOptions() {
+    return undefined;
+  }
+
+  _getMaxTextureSize() {
+    const gl = this.drawingContext;
+    return gl.getParameter(gl.MAX_TEXTURE_SIZE);
   }
 
   //////////////////////////////////////////////
+
   // Rendering
+
+  _initContext() {
+    if (this._pInst._glAttributes?.version !== 1) {
+      // Unless WebGL1 is explicitly asked for, try to create a WebGL2 context
+      this.drawingContext = this.canvas.getContext(
+        "webgl2",
+        this._pInst._glAttributes
+      );
+    }
+    this.webglVersion = this.drawingContext
+      ? constants.WEBGL2
+      : constants.WEBGL;
+    // If this is the main canvas, make sure the global `webglVersion` is set
+    this._pInst.webglVersion = this.webglVersion;
+    if (!this.drawingContext) {
+      // If we were unable to create a WebGL2 context (either because it was
+      // disabled via `setAttributes({ version: 1 })` or because the device
+      // doesn't support it), fall back to a WebGL1 context
+      this.drawingContext =
+        this.canvas.getContext("webgl", this._pInst._glAttributes) ||
+        this.canvas.getContext("experimental-webgl", this._pInst._glAttributes);
+    }
+    if (this.drawingContext === null) {
+      throw new Error("Error creating webgl context");
+    } else {
+      const gl = this.drawingContext;
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+      // Make sure all images are loaded into the canvas premultiplied so that
+      // they match the way we render colors. This will make framebuffer textures
+      // be encoded the same way as textures from everything else.
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      this._viewport = this.drawingContext.getParameter(
+        this.drawingContext.VIEWPORT
+      );
+    }
+  }
+
+  //////////////////////////////////////////////
+
+  // Geometry Building
+
+  //////////////////////////////////////////////
+
   //////////////////////////////////////////////
 
   /*_drawPoints(vertices, vertexBuffer) {
@@ -168,104 +217,36 @@ class RendererGL extends Renderer3D {
     pointShader.unbindShader();
   }*/
 
-  /**
-   * @private sets blending in gl context to curBlendMode
-   * @param  {Number[]} color [description]
-   * @return {Number[]}  Normalized numbers array
-   */
-  _applyBlendMode () {
-    if (this._cachedBlendMode === this.states.curBlendMode) {
-      return;
-    }
-    const gl = this.GL;
-    switch (this.states.curBlendMode) {
-      case constants.BLEND:
-        gl.blendEquation(gl.FUNC_ADD);
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        break;
-      case constants.ADD:
-        gl.blendEquation(gl.FUNC_ADD);
-        gl.blendFunc(gl.ONE, gl.ONE);
-        break;
-      case constants.REMOVE:
-        gl.blendEquation(gl.FUNC_ADD);
-        gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
-        break;
-      case constants.MULTIPLY:
-        gl.blendEquation(gl.FUNC_ADD);
-        gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
-        break;
-      case constants.SCREEN:
-        gl.blendEquation(gl.FUNC_ADD);
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR);
-        break;
-      case constants.EXCLUSION:
-        gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD);
-        gl.blendFuncSeparate(
-          gl.ONE_MINUS_DST_COLOR,
-          gl.ONE_MINUS_SRC_COLOR,
-          gl.ONE,
-          gl.ONE
-        );
-        break;
-      case constants.REPLACE:
-        gl.blendEquation(gl.FUNC_ADD);
-        gl.blendFunc(gl.ONE, gl.ZERO);
-        break;
-      case constants.SUBTRACT:
-        gl.blendEquationSeparate(gl.FUNC_REVERSE_SUBTRACT, gl.FUNC_ADD);
-        gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        break;
-      case constants.DARKEST:
-        if (this.blendExt) {
-          gl.blendEquationSeparate(
-            this.blendExt.MIN || this.blendExt.MIN_EXT,
-            gl.FUNC_ADD
-          );
-          gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE);
-        } else {
-          console.warn(
-            'blendMode(DARKEST) does not work in your browser in WEBGL mode.'
-          );
-        }
-        break;
-      case constants.LIGHTEST:
-        if (this.blendExt) {
-          gl.blendEquationSeparate(
-            this.blendExt.MAX || this.blendExt.MAX_EXT,
-            gl.FUNC_ADD
-          );
-          gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE);
-        } else {
-          console.warn(
-            'blendMode(LIGHTEST) does not work in your browser in WEBGL mode.'
-          );
-        }
-        break;
-      default:
-        console.error(
-          'Oops! Somehow Renderer3D set curBlendMode to an unsupported mode.'
-        );
-        break;
-    }
-    this._cachedBlendMode = this.states.curBlendMode;
-  }
-
-  _shaderOptions() {
-    return undefined;
-  }
+  //////////////////////////////////////////////
 
   _useShader(shader) {
     const gl = this.GL;
     gl.useProgram(shader._glProgram);
   }
 
-  /**
-   * Once all buffers have been bound, this checks to see if there are any
-   * remaining active attributes, likely left over from previous renders,
-   * and disables them so that they don't affect rendering.
-   * @private
-   */
+  // framebuffer the same in filter()
+
+  _setAttributeDefaults(pInst) {
+    // See issue #3850, safer to enable AA in Safari
+    const applyAA = navigator.userAgent.toLowerCase().includes("safari");
+    const defaults = {
+      alpha: true,
+      depth: true,
+      stencil: true,
+      antialias: applyAA,
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: true,
+      perPixelLighting: true,
+      version: 2,
+    };
+    if (pInst._glAttributes === null) {
+      pInst._glAttributes = defaults;
+    } else {
+      pInst._glAttributes = Object.assign(defaults, pInst._glAttributes);
+    }
+    return;
+  }
+
   _disableRemainingAttributes(shader) {
     for (const location of this.registerEnabled.values()) {
       if (
@@ -278,6 +259,10 @@ class RendererGL extends Renderer3D {
       }
     }
   }
+
+  //////////////////////////////////////////////
+
+  // Setting
 
   _drawBuffers(geometry, { mode = constants.TRIANGLES, count }) {
     const gl = this.GL;
@@ -356,29 +341,151 @@ class RendererGL extends Renderer3D {
     }
   }
 
-  //////////////////////////////////////////////
-  // Setting
+  // Positioning
+
+  /**
+   * @private sets blending in gl context to curBlendMode
+   * @param  {Number[]} color [description]
+   * @return {Number[]}  Normalized numbers array
+   */
+
   //////////////////////////////////////////////
 
-  _setAttributeDefaults(pInst) {
-    // See issue #3850, safer to enable AA in Safari
-    const applyAA = navigator.userAgent.toLowerCase().includes("safari");
-    const defaults = {
-      alpha: true,
-      depth: true,
-      stencil: true,
-      antialias: applyAA,
-      premultipliedAlpha: true,
-      preserveDrawingBuffer: true,
-      perPixelLighting: true,
-      version: 2,
-    };
-    if (pInst._glAttributes === null) {
-      pInst._glAttributes = defaults;
-    } else {
-      pInst._glAttributes = Object.assign(defaults, pInst._glAttributes);
+  _adjustDimensions(width, height) {
+    if (!this._maxTextureSize) {
+      this._maxTextureSize = this._getMaxTextureSize();
     }
-    return;
+    let maxTextureSize = this._maxTextureSize;
+
+    let maxAllowedPixelDimensions = Math.floor(
+      maxTextureSize / this._pixelDensity
+    );
+    let adjustedWidth = Math.min(width, maxAllowedPixelDimensions);
+    let adjustedHeight = Math.min(height, maxAllowedPixelDimensions);
+
+    if (adjustedWidth !== width || adjustedHeight !== height) {
+      console.warn(
+        "Warning: The requested width/height exceeds hardware limits. " +
+          `Adjusting dimensions to width: ${adjustedWidth}, height: ${adjustedHeight}.`
+      );
+    }
+
+    return { adjustedWidth, adjustedHeight };
+  }
+
+  // COLOR
+
+  setupContext() {
+    this._setAttributeDefaults(this._pInst);
+    this._initContext();
+    // This redundant property is useful in reminding you that you are
+    // interacting with WebGLRenderingContext, still worth considering future removal
+    this.GL = this.drawingContext;
+  }
+
+  //////////////////////////////////////////////
+
+  /**
+   * Once all buffers have been bound, this checks to see if there are any
+   * remaining active attributes, likely left over from previous renders,
+   * and disables them so that they don't affect rendering.
+   * @private
+   */
+
+  //////////////////////////////////////////////
+
+  //////////////////////////////////////////////
+
+  _applyBlendMode () {
+    if (this._cachedBlendMode === this.states.curBlendMode) {
+      return;
+    }
+    const gl = this.GL;
+    switch (this.states.curBlendMode) {
+      case constants.BLEND:
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        break;
+      case constants.ADD:
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.blendFunc(gl.ONE, gl.ONE);
+        break;
+      case constants.REMOVE:
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+        break;
+      case constants.MULTIPLY:
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
+        break;
+      case constants.SCREEN:
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR);
+        break;
+      case constants.EXCLUSION:
+        gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD);
+        gl.blendFuncSeparate(
+          gl.ONE_MINUS_DST_COLOR,
+          gl.ONE_MINUS_SRC_COLOR,
+          gl.ONE,
+          gl.ONE
+        );
+        break;
+      case constants.REPLACE:
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.blendFunc(gl.ONE, gl.ZERO);
+        break;
+      case constants.SUBTRACT:
+        gl.blendEquationSeparate(gl.FUNC_REVERSE_SUBTRACT, gl.FUNC_ADD);
+        gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        break;
+      case constants.DARKEST:
+        if (this.blendExt) {
+          gl.blendEquationSeparate(
+            this.blendExt.MIN || this.blendExt.MIN_EXT,
+            gl.FUNC_ADD
+          );
+          gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE);
+        } else {
+          console.warn(
+            'blendMode(DARKEST) does not work in your browser in WEBGL mode.'
+          );
+        }
+        break;
+      case constants.LIGHTEST:
+        if (this.blendExt) {
+          gl.blendEquationSeparate(
+            this.blendExt.MAX || this.blendExt.MAX_EXT,
+            gl.FUNC_ADD
+          );
+          gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE);
+        } else {
+          console.warn(
+            'blendMode(LIGHTEST) does not work in your browser in WEBGL mode.'
+          );
+        }
+        break;
+      default:
+        console.error(
+          'Oops! Somehow Renderer3D set curBlendMode to an unsupported mode.'
+        );
+        break;
+    }
+    this._cachedBlendMode = this.states.curBlendMode;
+  }
+
+  _updateSize() {}
+
+  // Shape drawing
+
+  //////////////////////////////////////////////
+
+  _resetBuffersBeforeDraw() {
+    this.GL.clearStencil(0);
+    this.GL.clear(this.GL.DEPTH_BUFFER_BIT | this.GL.STENCIL_BUFFER_BIT);
+    if (!this._userEnabledStencil) {
+      this._internalDisable.call(this.GL, this.GL.STENCIL_TEST);
+    }
   }
 
   _setAttributes(key, value) {
@@ -429,80 +536,7 @@ class RendererGL extends Renderer3D {
     }
   }
 
-  _initContext() {
-    if (this._pInst._glAttributes?.version !== 1) {
-      // Unless WebGL1 is explicitly asked for, try to create a WebGL2 context
-      this.drawingContext = this.canvas.getContext(
-        "webgl2",
-        this._pInst._glAttributes
-      );
-    }
-    this.webglVersion = this.drawingContext
-      ? constants.WEBGL2
-      : constants.WEBGL;
-    // If this is the main canvas, make sure the global `webglVersion` is set
-    this._pInst.webglVersion = this.webglVersion;
-    if (!this.drawingContext) {
-      // If we were unable to create a WebGL2 context (either because it was
-      // disabled via `setAttributes({ version: 1 })` or because the device
-      // doesn't support it), fall back to a WebGL1 context
-      this.drawingContext =
-        this.canvas.getContext("webgl", this._pInst._glAttributes) ||
-        this.canvas.getContext("experimental-webgl", this._pInst._glAttributes);
-    }
-    if (this.drawingContext === null) {
-      throw new Error("Error creating webgl context");
-    } else {
-      const gl = this.drawingContext;
-      gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LEQUAL);
-      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-      // Make sure all images are loaded into the canvas premultiplied so that
-      // they match the way we render colors. This will make framebuffer textures
-      // be encoded the same way as textures from everything else.
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-      this._viewport = this.drawingContext.getParameter(
-        this.drawingContext.VIEWPORT
-      );
-    }
-  }
-
-  _updateSize() {}
-
-  _getMaxTextureSize() {
-    const gl = this.drawingContext;
-    return gl.getParameter(gl.MAX_TEXTURE_SIZE);
-  }
-
-  _adjustDimensions(width, height) {
-    if (!this._maxTextureSize) {
-      this._maxTextureSize = this._getMaxTextureSize();
-    }
-    let maxTextureSize = this._maxTextureSize;
-
-    let maxAllowedPixelDimensions = Math.floor(
-      maxTextureSize / this._pixelDensity
-    );
-    let adjustedWidth = Math.min(width, maxAllowedPixelDimensions);
-    let adjustedHeight = Math.min(height, maxAllowedPixelDimensions);
-
-    if (adjustedWidth !== width || adjustedHeight !== height) {
-      console.warn(
-        "Warning: The requested width/height exceeds hardware limits. " +
-          `Adjusting dimensions to width: ${adjustedWidth}, height: ${adjustedHeight}.`
-      );
-    }
-
-    return { adjustedWidth, adjustedHeight };
-  }
-
-  _resetBuffersBeforeDraw() {
-    this.GL.clearStencil(0);
-    this.GL.clear(this.GL.DEPTH_BUFFER_BIT | this.GL.STENCIL_BUFFER_BIT);
-    if (!this._userEnabledStencil) {
-      this._internalDisable.call(this.GL, this.GL.STENCIL_TEST);
-    }
-  }
+  //////////////////////////////////////////////
 
   _applyClip() {
     const gl = this.GL;
