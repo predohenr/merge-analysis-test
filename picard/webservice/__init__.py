@@ -249,11 +249,6 @@ class WSRequest(QNetworkRequest):
     def has_auth(self):
         return self.mblogin and self.access_token
 
-    def _update_authorization_header(self):
-        if self.mblogin and self.access_token:
-            auth = 'Bearer ' + self.access_token
-            self.setRawHeader(b'Authorization', auth.encode('utf-8'))
-
     @property
     def host(self) -> str:
         return self.url().host()
@@ -283,6 +278,11 @@ class WSRequest(QNetworkRequest):
     def mblogin(self, mblogin: bool):
         self._mblogin = mblogin
         self._update_authorization_header()
+
+    def _update_authorization_header(self):
+        if self.mblogin and self.access_token:
+            auth = 'Bearer ' + self.access_token
+            self.setRawHeader(b'Authorization', auth.encode('utf-8'))
 
     def get_host_key(self) -> ratecontrol.HostKey:
         return (self.host, self.port)
