@@ -1296,20 +1296,6 @@ resource "aws_ecs_capacity_provider" "test" {
 `, rName))
 }
 
-func testAccAssociateCapacityProviderWithCluster(ctx context.Context, t *testing.T, clusterName, cpName string) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		conn := acctest.ProviderMeta(ctx, t).ECSClient(ctx)
-
-		_, err := conn.PutClusterCapacityProviders(ctx, &ecs.PutClusterCapacityProvidersInput{
-			Cluster:                         &clusterName,
-			CapacityProviders:               []string{cpName},
-			DefaultCapacityProviderStrategy: []awstypes.CapacityProviderStrategyItem{},
-		})
-
-		return err
-	}
-}
-
 func testAccCapacityProviderConfig_withClusterNoAssociation(rName string) string {
 	return acctest.ConfigCompose(testAccCapacityProviderConfig_base(rName), fmt.Sprintf(`
 resource "aws_ecs_cluster" "test" {
@@ -1332,6 +1318,20 @@ resource "aws_ecs_cluster" "test" {
   name = %[1]q
 }
 `, rName))
+}
+
+func testAccAssociateCapacityProviderWithCluster(ctx context.Context, t *testing.T, clusterName, cpName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		conn := acctest.ProviderMeta(ctx, t).ECSClient(ctx)
+
+		_, err := conn.PutClusterCapacityProviders(ctx, &ecs.PutClusterCapacityProvidersInput{
+			Cluster:                         &clusterName,
+			CapacityProviders:               []string{cpName},
+			DefaultCapacityProviderStrategy: []awstypes.CapacityProviderStrategyItem{},
+		})
+
+		return err
+	}
 }
 
 func testAccCapacityProviderConfig_withClusterAssociation(rName string) string {
