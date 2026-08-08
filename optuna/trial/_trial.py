@@ -766,7 +766,6 @@ class Trial(BaseTrial):
         """
 
         return self._cached_frozen_trial.number
-
     @property
     def constraints(self) -> dict[str, float]:
         """Returns constraint values.
