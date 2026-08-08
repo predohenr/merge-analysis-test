@@ -61,7 +61,6 @@ def wrap_preference_button_text(text, max_width=0, font_metrics=None):
         lines.append(line)
     return '\n'.join(lines) or text
 
-
 # Title Bar {{{
 
 
@@ -138,6 +137,7 @@ class TitleBar(QWidget):
 
 
 class SectionSeparator(QWidget):
+
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self.setFixedHeight(1)
@@ -159,7 +159,8 @@ class Category(QWidget):  # {{{
         self._layout = QVBoxLayout()
         self.setLayout(self._layout)
         margins = self._layout.contentsMargins()
-        self._layout.setContentsMargins(margins.left(), margins.top(), margins.right(), max(0, margins.bottom() - PREFERENCE_CATEGORY_VERTICAL_SHIFT))
+        self._layout.setContentsMargins(
+            margins.left(), margins.top(), margins.right(), max(0, margins.bottom() - PREFERENCE_CATEGORY_VERTICAL_SHIFT))
         if add_separator:
             self._layout.addWidget(SectionSeparator(self))
         self.label = QLabel(gui_name)
@@ -220,7 +221,8 @@ class Category(QWidget):  # {{{
         width = PREFERENCE_BUTTON_WIDTH if available_width is None and available <= 0 else max(1, available // self.columns)
         for button, button_text in self.buttons:
             button.setFixedWidth(width)
-            button.setText(wrap_preference_button_text(button_text, width - PREFERENCE_BUTTON_TEXT_PADDING, button.fontMetrics()))
+            button.setText(wrap_preference_button_text(
+                button_text, width - PREFERENCE_BUTTON_TEXT_PADDING, button.fontMetrics()))
 
     def triggered(self, plugin, *args):
         self.plugin_activated.emit(plugin)
