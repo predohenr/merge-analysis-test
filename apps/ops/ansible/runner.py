@@ -6,9 +6,9 @@ from django.conf import settings
 from django.utils._os import safe_join
 
 from common.utils import is_macos
-from common.utils.yml import sanitize_ansible_inventory_json, sanitize_ansible_playbook
 
 from ..utils import get_ansible_log_verbosity
+from common.utils.yml import sanitize_ansible_inventory_json, sanitize_ansible_playbook
 from .callback import DefaultCallback
 from .exception import CommandInBlackListException
 from .interface import interface
@@ -138,6 +138,10 @@ class PlaybookRunner:
         shutil.copytree(playbook_dir, project_playbook_dir, dirs_exist_ok=True)
         self.playbook = entry
 
+    @property
+    def playbook_project_dir(self):
+        return os.path.join(self.project_dir, 'project')
+
     def prepare_safe_inputs(self):
         # Security anchor:
         # For system-generated Ansible inputs that may contain user-controlled values,
@@ -153,9 +157,6 @@ class PlaybookRunner:
         if self.inventory_safety == "json_escape":
             sanitize_ansible_inventory_json(self.inventory, self.inventory)
             os.chmod(self.inventory, 0o600)
-    @property
-    def playbook_project_dir(self):
-        return os.path.join(self.project_dir, 'project')
 
     def run(self, verbosity=0, **kwargs):
         if not os.path.exists(self.project_dir):
