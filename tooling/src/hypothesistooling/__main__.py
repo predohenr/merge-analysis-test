@@ -744,8 +744,8 @@ ci_version_python = (
 )
 
 # automatically updated by update_pyodide_versions()
-PYODIDE_VERSION = "314.0.2"
-PYODIDE_BUILD_VERSION = "0.36.0"
+PYODIDE_VERSION = "314.0.0"
+PYODIDE_BUILD_VERSION = "0.35.1"
 PYODIDE_PYTHON_VERSION = "3.14.2"
 
 
