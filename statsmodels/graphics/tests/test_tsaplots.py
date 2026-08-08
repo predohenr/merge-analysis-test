@@ -230,7 +230,6 @@ def test_plot_ccf(close_figures):
     plot_ccf(x1, x2, ax=ax, use_vlines=False)
 
 
-@pytest.mark.thread_unsafe(reason="Uses matplotlib")
 @pytest.mark.matplotlib
 def test_plot_pccf(close_figures):
     # Just test that it runs.
@@ -278,6 +277,7 @@ def test_plot_pccf_irregular_lags(close_figures):
     assert_allclose(line.get_ydata(), pccf_xy[expected_lags - 1], atol=1e-14)
 
 
+@pytest.mark.thread_unsafe(reason="Uses matplotlib")
 @pytest.mark.matplotlib
 def test_plot_accf_grid(close_figures):
     # Just test that it runs.
