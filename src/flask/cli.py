@@ -238,6 +238,231 @@ def locate_app(
 ) -> Flask | None: ...
 
 
+@click.command("run", short_help="Run a development server.")
+@click.option("--host", "-h", default="127.0.0.1", help="The interface to bind to.")
+@click.option("--port", "-p", default=5000, help="The port to bind to.")
+@click.option(
+    "--cert",
+    type=CertParamType(),
+    help="Specify a certificate file to use HTTPS.",
+    is_eager=True,
+)
+@click.option(
+    "--key",
+    type=click.Path(exists=True, dir_okay=False, resolve_path=True),
+    callback=_validate_key,
+    expose_value=False,
+    help="The key file to use when specifying a certificate.",
+)
+@click.option(
+    "--reload/--no-reload",
+    default=None,
+    help="Enable or disable the reloader. By default the reloader "
+    "is active if debug is enabled.",
+)
+@click.option(
+    "--debugger/--no-debugger",
+    default=None,
+    help="Enable or disable the debugger. By default the debugger "
+    "is active if debug is enabled.",
+)
+@click.option(
+    "--with-threads/--without-threads",
+    default=True,
+    help="Enable or disable multithreading.",
+)
+@click.option(
+    "--extra-files",
+    default=None,
+    type=SeparatedPathType(),
+    help=(
+        "Extra files that trigger a reload on change. Multiple paths"
+        f" are separated by {os.path.pathsep!r}."
+    ),
+)
+@click.option(
+    "--exclude-patterns",
+    default=None,
+    type=SeparatedPathType(),
+    help=(
+        "Files matching these fnmatch patterns will not trigger a reload"
+        " on change. Multiple patterns are separated by"
+        f" {os.path.pathsep!r}."
+    ),
+)
+@pass_script_info
+def run_command(
+    info: ScriptInfo,
+    host: str,
+    port: int,
+    reload: bool,
+    debugger: bool,
+    with_threads: bool,
+    cert: ssl.SSLContext | tuple[str, str | None] | t.Literal["adhoc"] | None,
+    extra_files: list[str] | None,
+    exclude_patterns: list[str] | None,
+) -> None:
+    """Run a local development server.
+
+    This server is for development purposes only. It does not provide
+    the stability, security, or performance of production WSGI servers.
+
+    The reloader and debugger are enabled by default with the '--debug'
+    option.
+    """
+    try:
+        app: WSGIApplication = info.load_app()  # pyright: ignore
+    except Exception as e:
+        if is_running_from_reloader():
+            # When reloading, print out the error immediately, but raise
+            # it later so the debugger or server can handle it.
+            traceback.print_exc()
+            err = e
+
+            def app(
+                environ: WSGIEnvironment, start_response: StartResponse
+            ) -> cabc.Iterable[bytes]:
+                raise err from None
+
+        else:
+            # When not reloading, raise the error immediately so the
+            # command fails.
+            raise e from None
+
+    debug = get_debug_flag()
+
+    if reload is None:
+        reload = debug
+
+    if debugger is None:
+        debugger = debug
+
+    show_server_banner(debug, info.app_import_path)
+
+    run_simple(
+        host,
+        port,
+        app,
+        use_reloader=reload,
+        use_debugger=debugger,
+        threaded=with_threads,
+        ssl_context=cert,
+        extra_files=extra_files,
+        exclude_patterns=exclude_patterns,
+    )
+
+
+@click.command("shell", short_help="Run a shell in the app context.")
+@with_appcontext
+def shell_command() -> None:
+    """Run an interactive Python shell in the context of a given
+    Flask application.  The application will populate the default
+    namespace of this shell according to its configuration.
+
+    This is useful for executing small snippets of management code
+    without having to manually configure the application.
+    """
+    import code
+
+    banner = (
+        f"Python {sys.version} on {sys.platform}\n"
+        f"App: {current_app.import_name}\n"
+        f"Instance: {current_app.instance_path}"
+    )
+    ctx: dict[str, t.Any] = {}
+
+    # Support the regular Python interpreter startup script if someone
+    # is using it.
+    startup = os.environ.get("PYTHONSTARTUP")
+    if startup and os.path.isfile(startup):
+        with open(startup) as f:
+            eval(compile(f.read(), startup, "exec"), ctx)
+
+    ctx.update(current_app.make_shell_context())
+
+    # Site, customize, or startup script can set a hook to call when
+    # entering interactive mode. The default one sets up readline with
+    # tab and history completion.
+    interactive_hook = getattr(sys, "__interactivehook__", None)
+
+    if interactive_hook is not None:
+        try:
+            import readline
+            from rlcompleter import Completer
+        except ImportError:
+            pass
+        else:
+            # rlcompleter uses __main__.__dict__ by default, which is
+            # flask.__main__. Use the shell context instead.
+            readline.set_completer(Completer(ctx).complete)
+
+        interactive_hook()
+
+    code.interact(banner=banner, local=ctx)
+
+
+@click.command("routes", short_help="Show the routes for the app.")
+@click.option(
+    "--sort",
+    "-s",
+    type=click.Choice(("endpoint", "methods", "domain", "rule", "match")),
+    default="endpoint",
+    help=(
+        "Method to sort routes by. 'match' is the order that Flask will match routes"
+        " when dispatching a request."
+    ),
+)
+@click.option("--all-methods", is_flag=True, help="Show HEAD and OPTIONS methods.")
+@with_appcontext
+def routes_command(sort: str, all_methods: bool) -> None:
+    """Show all registered routes with endpoints and methods."""
+    rules = list(current_app.url_map.iter_rules())
+
+    if not rules:
+        click.echo("No routes were registered.")
+        return
+
+    ignored_methods = set() if all_methods else {"HEAD", "OPTIONS"}
+    host_matching = current_app.url_map.host_matching
+    has_domain = any(rule.host if host_matching else rule.subdomain for rule in rules)
+    rows = []
+
+    for rule in rules:
+        row = [
+            rule.endpoint,
+            ", ".join(sorted((rule.methods or set()) - ignored_methods)),
+        ]
+
+        if has_domain:
+            row.append((rule.host if host_matching else rule.subdomain) or "")
+
+        row.append(rule.rule)
+        rows.append(row)
+
+    headers = ["Endpoint", "Methods"]
+    sorts = ["endpoint", "methods"]
+
+    if has_domain:
+        headers.append("Host" if host_matching else "Subdomain")
+        sorts.append("domain")
+
+    headers.append("Rule")
+    sorts.append("rule")
+
+    try:
+        rows.sort(key=itemgetter(sorts.index(sort)))
+    except ValueError:
+        pass
+
+    rows.insert(0, headers)
+    widths = [max(len(row[i]) for row in rows) for i in range(len(headers))]
+    rows.insert(1, ["-" * w for w in widths])
+    template = "  ".join(f"{{{i}:<{w}}}" for i, w in enumerate(widths))
+
+    for row in rows:
+        click.echo(template.format(*row))
+
+
 def locate_app(
     module_name: str, app_name: str | None, raise_if_not_found: bool = True
 ) -> Flask | None:
@@ -777,7 +1002,7 @@ def show_server_banner(debug: bool, app_import_path: str | None) -> None:
         click.echo(f" * Debug mode: {'on' if debug else 'off'}")
 
 
-class CertParamType(click.ParamType):  # type: ignore[type-arg]
+class CertParamType(click.ParamType[t.Any]):  # type: ignore[type-arg]
     """Click option type for the ``--cert`` option. Allows either an
     existing file, the string ``'adhoc'``, or an import for a
     :class:`~ssl.SSLContext` object.
@@ -879,232 +1104,7 @@ class SeparatedPathType(click.Path):
         return [super_convert(item, param, ctx) for item in items]
 
 
-@click.command("run", short_help="Run a development server.")
-@click.option("--host", "-h", default="127.0.0.1", help="The interface to bind to.")
-@click.option("--port", "-p", default=5000, help="The port to bind to.")
-@click.option(
-    "--cert",
-    type=CertParamType(),
-    help="Specify a certificate file to use HTTPS.",
-    is_eager=True,
-)
-@click.option(
-    "--key",
-    type=click.Path(exists=True, dir_okay=False, resolve_path=True),
-    callback=_validate_key,
-    expose_value=False,
-    help="The key file to use when specifying a certificate.",
-)
-@click.option(
-    "--reload/--no-reload",
-    default=None,
-    help="Enable or disable the reloader. By default the reloader "
-    "is active if debug is enabled.",
-)
-@click.option(
-    "--debugger/--no-debugger",
-    default=None,
-    help="Enable or disable the debugger. By default the debugger "
-    "is active if debug is enabled.",
-)
-@click.option(
-    "--with-threads/--without-threads",
-    default=True,
-    help="Enable or disable multithreading.",
-)
-@click.option(
-    "--extra-files",
-    default=None,
-    type=SeparatedPathType(),
-    help=(
-        "Extra files that trigger a reload on change. Multiple paths"
-        f" are separated by {os.path.pathsep!r}."
-    ),
-)
-@click.option(
-    "--exclude-patterns",
-    default=None,
-    type=SeparatedPathType(),
-    help=(
-        "Files matching these fnmatch patterns will not trigger a reload"
-        " on change. Multiple patterns are separated by"
-        f" {os.path.pathsep!r}."
-    ),
-)
-@pass_script_info
-def run_command(
-    info: ScriptInfo,
-    host: str,
-    port: int,
-    reload: bool,
-    debugger: bool,
-    with_threads: bool,
-    cert: ssl.SSLContext | tuple[str, str | None] | t.Literal["adhoc"] | None,
-    extra_files: list[str] | None,
-    exclude_patterns: list[str] | None,
-) -> None:
-    """Run a local development server.
-
-    This server is for development purposes only. It does not provide
-    the stability, security, or performance of production WSGI servers.
-
-    The reloader and debugger are enabled by default with the '--debug'
-    option.
-    """
-    try:
-        app: WSGIApplication = info.load_app()  # pyright: ignore
-    except Exception as e:
-        if is_running_from_reloader():
-            # When reloading, print out the error immediately, but raise
-            # it later so the debugger or server can handle it.
-            traceback.print_exc()
-            err = e
-
-            def app(
-                environ: WSGIEnvironment, start_response: StartResponse
-            ) -> cabc.Iterable[bytes]:
-                raise err from None
-
-        else:
-            # When not reloading, raise the error immediately so the
-            # command fails.
-            raise e from None
-
-    debug = get_debug_flag()
-
-    if reload is None:
-        reload = debug
-
-    if debugger is None:
-        debugger = debug
-
-    show_server_banner(debug, info.app_import_path)
-
-    run_simple(
-        host,
-        port,
-        app,
-        use_reloader=reload,
-        use_debugger=debugger,
-        threaded=with_threads,
-        ssl_context=cert,
-        extra_files=extra_files,
-        exclude_patterns=exclude_patterns,
-    )
-
-
 run_command.params.insert(0, _debug_option)
-
-
-@click.command("shell", short_help="Run a shell in the app context.")
-@with_appcontext
-def shell_command() -> None:
-    """Run an interactive Python shell in the context of a given
-    Flask application.  The application will populate the default
-    namespace of this shell according to its configuration.
-
-    This is useful for executing small snippets of management code
-    without having to manually configure the application.
-    """
-    import code
-
-    banner = (
-        f"Python {sys.version} on {sys.platform}\n"
-        f"App: {current_app.import_name}\n"
-        f"Instance: {current_app.instance_path}"
-    )
-    ctx: dict[str, t.Any] = {}
-
-    # Support the regular Python interpreter startup script if someone
-    # is using it.
-    startup = os.environ.get("PYTHONSTARTUP")
-    if startup and os.path.isfile(startup):
-        with open(startup) as f:
-            eval(compile(f.read(), startup, "exec"), ctx)
-
-    ctx.update(current_app.make_shell_context())
-
-    # Site, customize, or startup script can set a hook to call when
-    # entering interactive mode. The default one sets up readline with
-    # tab and history completion.
-    interactive_hook = getattr(sys, "__interactivehook__", None)
-
-    if interactive_hook is not None:
-        try:
-            import readline
-            from rlcompleter import Completer
-        except ImportError:
-            pass
-        else:
-            # rlcompleter uses __main__.__dict__ by default, which is
-            # flask.__main__. Use the shell context instead.
-            readline.set_completer(Completer(ctx).complete)
-
-        interactive_hook()
-
-    code.interact(banner=banner, local=ctx)
-
-
-@click.command("routes", short_help="Show the routes for the app.")
-@click.option(
-    "--sort",
-    "-s",
-    type=click.Choice(("endpoint", "methods", "domain", "rule", "match")),
-    default="endpoint",
-    help=(
-        "Method to sort routes by. 'match' is the order that Flask will match routes"
-        " when dispatching a request."
-    ),
-)
-@click.option("--all-methods", is_flag=True, help="Show HEAD and OPTIONS methods.")
-@with_appcontext
-def routes_command(sort: str, all_methods: bool) -> None:
-    """Show all registered routes with endpoints and methods."""
-    rules = list(current_app.url_map.iter_rules())
-
-    if not rules:
-        click.echo("No routes were registered.")
-        return
-
-    ignored_methods = set() if all_methods else {"HEAD", "OPTIONS"}
-    host_matching = current_app.url_map.host_matching
-    has_domain = any(rule.host if host_matching else rule.subdomain for rule in rules)
-    rows = []
-
-    for rule in rules:
-        row = [
-            rule.endpoint,
-            ", ".join(sorted((rule.methods or set()) - ignored_methods)),
-        ]
-
-        if has_domain:
-            row.append((rule.host if host_matching else rule.subdomain) or "")
-
-        row.append(rule.rule)
-        rows.append(row)
-
-    headers = ["Endpoint", "Methods"]
-    sorts = ["endpoint", "methods"]
-
-    if has_domain:
-        headers.append("Host" if host_matching else "Subdomain")
-        sorts.append("domain")
-
-    headers.append("Rule")
-    sorts.append("rule")
-
-    try:
-        rows.sort(key=itemgetter(sorts.index(sort)))
-    except ValueError:
-        pass
-
-    rows.insert(0, headers)
-    widths = [max(len(row[i]) for row in rows) for i in range(len(headers))]
-    rows.insert(1, ["-" * w for w in widths])
-    template = "  ".join(f"{{{i}:<{w}}}" for i, w in enumerate(widths))
-
-    for row in rows:
-        click.echo(template.format(*row))
 
 
 cli = FlaskGroup(
