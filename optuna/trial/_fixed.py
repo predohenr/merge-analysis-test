@@ -6,12 +6,12 @@ from typing import overload
 from typing import TYPE_CHECKING
 
 from optuna import distributions
-from optuna._deprecated import deprecated_func
-from optuna._warnings import optuna_warn
-from optuna.distributions import CategoricalDistribution
-from optuna.distributions import FloatDistribution
 from optuna.distributions import IntDistribution
 from optuna.study._constrained_optimization import _CONSTRAINTS_KEY
+from optuna._deprecated import deprecated_func
+from optuna.distributions import FloatDistribution
+from optuna._warnings import optuna_warn
+from optuna.distributions import CategoricalDistribution
 from optuna.trial._base import BaseTrial
 
 
@@ -183,7 +183,6 @@ class FixedTrial(BaseTrial):
     @property
     def number(self) -> int:
         return self._number
-
     @property
     def constraints(self) -> dict[str, float]:
         """Returns constraint values.

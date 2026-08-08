@@ -10,14 +10,14 @@ import optuna
 from optuna import distributions
 from optuna import logging
 from optuna import pruners
-from optuna._deprecated import deprecated_func
 from optuna._warnings import optuna_warn
+from optuna._deprecated import deprecated_func
+from optuna.distributions import FloatDistribution
 from optuna.distributions import BaseDistribution
 from optuna.distributions import CategoricalChoiceType
-from optuna.distributions import CategoricalDistribution
-from optuna.distributions import FloatDistribution
-from optuna.distributions import IntDistribution
 from optuna.study._constrained_optimization import _CONSTRAINTS_KEY
+from optuna.distributions import CategoricalDistribution
+from optuna.distributions import IntDistribution
 from optuna.trial._base import BaseTrial
 
 
@@ -759,7 +759,6 @@ class Trial(BaseTrial):
         """
 
         return self._cached_frozen_trial.number
-
     @property
     def constraints(self) -> dict[str, float]:
         """Returns constraint values.
