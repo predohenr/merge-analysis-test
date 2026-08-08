@@ -379,6 +379,10 @@ func (c *coreContext) Uniform1i(uniform Uniform, v int32) {
 	gl.Uniform1i(int32(uniform), v)
 }
 
+func (c *coreContext) Uniform1fv(uniform Uniform, v []float32) {
+	gl.Uniform1fv(int32(uniform), int32(len(v)), &v[0])
+}
+
 func (c *coreContext) Uniform2f(uniform Uniform, v0, v1 float32) {
 	gl.Uniform2f(int32(uniform), v0, v1)
 }
