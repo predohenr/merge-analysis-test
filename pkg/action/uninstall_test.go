@@ -18,8 +18,8 @@ package action
 
 import (
 	"bytes"
+	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -153,11 +153,11 @@ func TestUninstallRelease_Cascade(t *testing.T) {
 	// Create dummy resources with Mapping but no Client - this skips ownership verification
 	// (nil Client is treated as owned) and goes directly to delete
 	dummyResources := kube.ResourceList{
-		newDeploymentResource("secret", "", ""),
+		newDeploymentResource("secret", ""),
 	}
 
 	failer := unAction.cfg.KubeClient.(*kubefake.FailingKubeClient)
-	failer.DeleteError = fmt.Errorf("Uninstall with cascade failed")
+	failer.DeleteError = errors.New("Uninstall with cascade failed")
 	failer.DummyResources = dummyResources
 	unAction.cfg.KubeClient = failer
 	_, err := unAction.Run(rel.Name)
@@ -179,63 +179,41 @@ func TestUninstallRun_UnreachableKubeClient(t *testing.T) {
 	assert.ErrorContains(t, err, "connection refused")
 }
 
-func TestUninstallRelease_OwnershipVerification(t *testing.T) {
+func TestUninstall_WaitOptionsPassedDownstream(t *testing.T) {
 	is := assert.New(t)
 
-	// Create a buffer to capture log output
-	logBuffer := &bytes.Buffer{}
-	handler := slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug})
-
-	config := actionConfigFixture(t)
-	config.SetLogger(handler)
-
-	unAction := NewUninstall(config)
+	unAction := uninstallAction(t)
 	unAction.DisableHooks = true
 	unAction.DryRun = false
-	unAction.KeepHistory = true
+	unAction.WaitStrategy = kube.StatusWatcherStrategy
+
+	// Use WithWaitContext as a marker WaitOption that we can track
+	ctx := context.Background()
+	unAction.WaitOptions = []kube.WaitOption{kube.WithWaitContext(ctx)}
 
 	rel := releaseStub()
-	rel.Name = "ownership-test"
-	rel.Namespace = "default"
-	rel.Manifest = `apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: test-configmap
-  labels:
-    app.kubernetes.io/managed-by: Helm
-  annotations:
-    meta.helm.sh/release-name: ownership-test
-    meta.helm.sh/release-namespace: default
-data:
-  key: value`
-	config.Releases.Create(rel)
+	rel.Name = "wait-options-uninstall"
+	rel.Manifest = `{
+		"apiVersion": "v1",
+		"kind": "Secret",
+		"metadata": {
+		  "name": "secret"
+		},
+		"type": "Opaque",
+		"data": {
+		  "password": "password"
+		}
+	}`
+	require.NoError(t, unAction.cfg.Releases.Create(rel))
 
-	// Create dummy resources with proper ownership metadata
-	labels := map[string]string{
-		"app.kubernetes.io/managed-by": "Helm",
-	}
-	annotations := map[string]string{
-		"meta.helm.sh/release-name":      "ownership-test",
-		"meta.helm.sh/release-namespace": "default",
-	}
-	dummyResources := kube.ResourceList{
-		newDeploymentWithOwner("owned-deploy", "default", labels, annotations),
-	}
-	failer := config.KubeClient.(*kubefake.FailingKubeClient)
-	failer.DummyResources = dummyResources
+	// Access the underlying FailingKubeClient to check recorded options
+	failer := unAction.cfg.KubeClient.(*kubefake.FailingKubeClient)
 
-	resi, err := unAction.Run(rel.Name)
+	_, err := unAction.Run(rel.Name)
 	is.NoError(err)
-	is.NotNil(resi)
-	res, err := releaserToV1Release(resi.Release)
-	is.NoError(err)
-	is.Equal(common.StatusUninstalled, res.Info.Status)
 
-	// Verify log contains debug message about deleting owned resource
-	logOutput := logBuffer.String()
-	is.Contains(logOutput, "deleting resource owned by this release")
-	is.Contains(logOutput, "owned-deploy")
-	is.Contains(logOutput, "Deployment")
+	// Verify that WaitOptions were passed to GetWaiter
+	is.NotEmpty(failer.RecordedWaitOptions, "WaitOptions should be passed to GetWaiter")
 }
 
 func TestUninstallRelease_OwnershipVerification_WithKeepPolicy(t *testing.T) {
@@ -300,6 +278,65 @@ data:
 	logOutput := logBuffer.String()
 	is.Contains(logOutput, "skipping delete of resource not owned by this release")
 	is.Contains(logOutput, "unowned-deploy")
+}
+
+func TestUninstallRelease_OwnershipVerification(t *testing.T) {
+	is := assert.New(t)
+
+	// Create a buffer to capture log output
+	logBuffer := &bytes.Buffer{}
+	handler := slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug})
+
+	config := actionConfigFixture(t)
+	config.SetLogger(handler)
+
+	unAction := NewUninstall(config)
+	unAction.DisableHooks = true
+	unAction.DryRun = false
+	unAction.KeepHistory = true
+
+	rel := releaseStub()
+	rel.Name = "ownership-test"
+	rel.Namespace = "default"
+	rel.Manifest = `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-configmap
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: ownership-test
+    meta.helm.sh/release-namespace: default
+data:
+  key: value`
+	config.Releases.Create(rel)
+
+	// Create dummy resources with proper ownership metadata
+	labels := map[string]string{
+		"app.kubernetes.io/managed-by": "Helm",
+	}
+	annotations := map[string]string{
+		"meta.helm.sh/release-name":      "ownership-test",
+		"meta.helm.sh/release-namespace": "default",
+	}
+	dummyResources := kube.ResourceList{
+		newDeploymentWithOwner("owned-deploy", "default", labels, annotations),
+	}
+	failer := config.KubeClient.(*kubefake.FailingKubeClient)
+	failer.DummyResources = dummyResources
+
+	resi, err := unAction.Run(rel.Name)
+	is.NoError(err)
+	is.NotNil(resi)
+	res, err := releaserToV1Release(resi.Release)
+	is.NoError(err)
+	is.Equal(common.StatusUninstalled, res.Info.Status)
+
+	// Verify log contains debug message about deleting owned resource
+	logOutput := logBuffer.String()
+	is.Contains(logOutput, "deleting resource owned by this release")
+	is.Contains(logOutput, "owned-deploy")
+	is.Contains(logOutput, "Deployment")
 }
 
 func TestUninstallRelease_DryRun_OwnershipVerification(t *testing.T) {
