@@ -1899,20 +1899,6 @@ class AsyncSessionTransaction(
             and self._sync_transaction().is_active
         )
 
-    def _sync_transaction(self) -> SessionTransaction:
-        if not self.sync_transaction:
-            self._raise_for_not_started()
-        return self.sync_transaction
-
-    async def rollback(self) -> None:
-        """Roll back this :class:`_asyncio.AsyncTransaction`."""
-        await greenlet_spawn(self._sync_transaction().rollback)
-
-    async def commit(self) -> None:
-        """Commit this :class:`_asyncio.AsyncTransaction`."""
-
-        await greenlet_spawn(self._sync_transaction().commit)
-
     @classmethod
     def _regenerate_proxy_for_target(  # type: ignore[override]
         cls,
@@ -1927,6 +1913,20 @@ class AsyncSessionTransaction(
         obj.sync_transaction = obj._assign_proxied(sync_transaction)
         obj.nested = nested
         return obj
+
+    def _sync_transaction(self) -> SessionTransaction:
+        if not self.sync_transaction:
+            self._raise_for_not_started()
+        return self.sync_transaction
+
+    async def rollback(self) -> None:
+        """Roll back this :class:`_asyncio.AsyncTransaction`."""
+        await greenlet_spawn(self._sync_transaction().rollback)
+
+    async def commit(self) -> None:
+        """Commit this :class:`_asyncio.AsyncTransaction`."""
+
+        await greenlet_spawn(self._sync_transaction().commit)
 
     async def start(
         self, is_ctxmanager: bool = False
