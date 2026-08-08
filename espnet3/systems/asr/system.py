@@ -47,6 +47,96 @@ class ASRSystem(BaseSystem):
             **kwargs,
         )
 
+    def get_stage_log_dir(self, stage: str) -> Path:
+        """Return stage-specific log directories when configured.
+
+        The ASR system routes logs to artifact directories when available:
+          - ``create_dataset``: ``train_config.create_dataset.dataset_dir`` or
+            ``train_config.dataset_dir`` or ``train_config.data_dir``.
+          - ``train_tokenizer``: ``train_config.tokenizer.save_path``.
+          - ``collect_stats``: ``train_config.stats_dir``.
+          - ``train``/``publish``: ``train_config.exp_dir``.
+          - ``infer``: ``infer_config.decode_dir``.
+          - ``measure``: ``metric_config.decode_dir`` or ``infer_config.decode_dir``.
+
+        If none of the stage-specific paths are configured, it falls back to
+        ``BaseSystem.get_stage_log_dir`` (``train_config.exp_dir`` or
+        ``<cwd>/logs``).
+
+        Args:
+            stage (str): Stage name being executed.
+
+        Returns:
+            Path: Directory where the stage log should be placed.
+        """
+        if stage == "create_dataset":
+            cfg = getattr(self.train_config, "create_dataset", None)
+            if cfg is not None:
+                dataset_dir = getattr(cfg, "dataset_dir", None)
+                if dataset_dir:
+                    return Path(dataset_dir)
+            dataset_dir = getattr(self.train_config, "dataset_dir", None)
+            if dataset_dir:
+                return Path(dataset_dir)
+            data_dir = getattr(self.train_config, "data_dir", None)
+            if data_dir:
+                return Path(data_dir)
+        elif stage == "train_tokenizer":
+            tokenizer_cfg = getattr(self.train_config, "tokenizer", None)
+            save_path = (
+                getattr(tokenizer_cfg, "save_path", None) if tokenizer_cfg else None
+            )
+            if save_path:
+                return Path(save_path)
+        elif stage == "collect_stats":
+            stats_dir = getattr(self.train_config, "stats_dir", None)
+            if stats_dir:
+                return Path(stats_dir)
+        elif stage in {"train", "publish"}:
+            exp_dir = getattr(self.train_config, "exp_dir", None)
+            if exp_dir:
+                return Path(exp_dir)
+        elif stage == "infer":
+            decode_dir = getattr(self.infer_config, "decode_dir", None)
+            if decode_dir:
+                return Path(decode_dir)
+        elif stage == "measure":
+            decode_dir = getattr(self.metric_config, "decode_dir", None)
+            if decode_dir:
+                return Path(decode_dir)
+            decode_dir = getattr(self.infer_config, "decode_dir", None)
+            if decode_dir:
+                return Path(decode_dir)
+        return super().get_stage_log_dir(stage)
+
+    def create_dataset(self, *args, **kwargs):
+        """Create datasets using the configured helper function.
+
+        The callable is resolved from ``training_config.create_dataset.func`` and
+        invoked with the remaining configuration values.
+
+        Raises:
+            RuntimeError: If the configuration does not specify a function.
+        """
+        self._reject_stage_args("create_dataset", args, kwargs)
+        logger.info("ASRSystem.create_dataset(): starting dataset creation process")
+        start = time.perf_counter()
+        config = getattr(self.training_config, "create_dataset", None)
+        if config is None or not getattr(config, "func", None):
+            raise RuntimeError(
+                "training_config.create_dataset.func must be set to run create_dataset"
+            )
+        fn = load_function(config.func)
+        extra = {k: v for k, v in config.items() if k != "func"}
+        logger.info("Creating dataset with function %s", config.func)
+        result = fn(**extra)
+        logger.info(
+            "Dataset creation completed in %.2fs using %s",
+            time.perf_counter() - start,
+            config.func,
+        )
+        return result
+
     def train(self, *args, **kwargs):
         """Train the model, training the tokenizer first if needed.
 
