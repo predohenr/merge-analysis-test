@@ -2552,6 +2552,13 @@ class OpenStack_2_Tests(OpenStack_1_1_Tests):
         ip = OpenStack_1_1_FloatingIpAddress("foo-bar-id", "42.42.42.42", None)
         self.assertTrue(self.driver.ex_delete_floating_ip(ip))
 
+    def test_ex_list_hosts(self):
+        hosts = self.driver.ex_list_hosts()
+        self.assertEqual(len(hosts), 1)
+        self.assertEqual(hosts[0].id, "1")
+        self.assertEqual(hosts[0].hypervisor_hostname, "compute-1")
+        self.assertEqual(hosts[0].vcpus, 4)
+
     def test_ex_list_leases(self):
         leases = self.driver.ex_list_leases()
         self.assertEqual(len(leases), 1)
@@ -2560,13 +2567,6 @@ class OpenStack_2_Tests(OpenStack_1_1_Tests):
         self.assertEqual(leases[0].start, "2017-12-26T12:00:00.000000")
         self.assertEqual(leases[0].end, "2017-12-27T12:00:00.000000")
         self.assertEqual(leases[0].status, "PENDING")
-
-    def test_ex_list_hosts(self):
-        hosts = self.driver.ex_list_hosts()
-        self.assertEqual(len(hosts), 1)
-        self.assertEqual(hosts[0].id, "1")
-        self.assertEqual(hosts[0].hypervisor_hostname, "compute-1")
-        self.assertEqual(hosts[0].vcpus, 4)
 
     def test_ex_attach_floating_ip_to_node(self):
         image = NodeImage(id=11, name="Ubuntu 8.10 (intrepid)", driver=self.driver)
