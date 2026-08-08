@@ -46,6 +46,10 @@ class ImportAddedTest(PluginMixin, AutotagImportTestCase):
     plugin = "importadded"
     min_mtime = None
 
+    def tearDown(self):
+        super().tearDown()
+        self.matcher.restore()
+
     def setUp(self):
         preserve_plugin_listeners()
         super().setUp()
