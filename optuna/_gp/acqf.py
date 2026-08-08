@@ -17,9 +17,11 @@ from optuna.study._multi_objective import _is_pareto_front
 if TYPE_CHECKING:
     import torch
 
+    from optuna._gp.gp import ConditionalGPRegressor
     from optuna._gp.gp import GPRegressor
     from optuna._gp.search_space import SearchSpace
 else:
+    from optuna._gp.gp import ConditionalGPRegressor
     from optuna._imports import _LazyImport
 
     torch = _LazyImport("torch")
@@ -148,7 +150,6 @@ class qLogEI(BaseAcquisitionFunc):
         stabilizing_noise: float = 1e-12,
     ) -> None:
         self._threshold = threshold
-        self._n_qmc_samples = n_qmc_samples
         self._cond_gpr = ConditionalGPRegressor(
             gpr=gpr,
             X_running=torch.from_numpy(normalized_params_of_running_trials),
@@ -156,20 +157,28 @@ class qLogEI(BaseAcquisitionFunc):
             qmc_seed=qmc_seed,
             stabilizing_noise=stabilizing_noise,
         )
+        self._conditional_gpr = ConditionalGPRegressor(
+            gpr=gpr,
+            X_running=self._X_running,
+            fixed_samples=self._fixed_samples,
+            stabilizing_noise=stabilizing_noise,
+        )
         super().__init__(gpr.length_scales, search_space)
 
-    def _log_improvement(self, x: torch.Tensor) -> torch.Tensor:
+    def _get_log_improvement(self, x: torch.Tensor) -> torch.Tensor:
         if np.isneginf(self._threshold):
             return torch.zeros(
-                x.shape[:-1] + (self._n_qmc_samples, self._cond_gpr._X_running.shape[0] + 1),
+                x.shape[:-1] + (self._fixed_samples.shape[0], self._X_running.shape[0] + 1),
                 dtype=torch.float64,
             )
-        # NOTE(nabenabe): See Eq. (10) of https://arxiv.org/pdf/2310.20708
-        y_post = self._cond_gpr.sample_joint_posterior(x)
+
+        y_post = self._conditional_gpr.sample(x)
         return (y_post - self._threshold).clamp_min_(_EPS).log()
 
     def eval_acqf(self, x: torch.Tensor) -> torch.Tensor:
-        return _aggregate_log_acqf_over_q_batch(self._log_improvement(x))
+        # NOTE(nabenabe): See Eq. (10) of https://arxiv.org/pdf/2310.20708
+        log_improvement = self._get_log_improvement(x)
+        return _aggregate_log_acqf_over_q_batch(log_improvement)
 
 
 class LogPI(BaseAcquisitionFunc):
@@ -212,38 +221,6 @@ class LogPI(BaseAcquisitionFunc):
         sigma = torch.sqrt(var + self._stabilizing_noise)
         # NOTE(nabenabe): integral from a to b of f(x) is integral from -b to -a of f(-x).
         return torch.special.log_ndtr((mean - self._threshold) / sigma)
-
-
-class qLogPI(BaseAcquisitionFunc):
-    def __init__(
-        self,
-        gpr: GPRegressor,
-        search_space: SearchSpace,
-        threshold: float,
-        n_qmc_samples: int,
-        qmc_seed: int,
-        normalized_params_of_running_trials: np.ndarray,
-        stabilizing_noise: float = 1e-12,
-        tau: float = 1e-2,
-    ) -> None:
-        self._threshold = threshold
-        self._tau = tau
-        self._cond_gpr = ConditionalGPRegressor(
-            gpr=gpr,
-            X_running=torch.from_numpy(normalized_params_of_running_trials),
-            n_qmc_samples=n_qmc_samples,
-            qmc_seed=qmc_seed,
-            stabilizing_noise=stabilizing_noise,
-        )
-        super().__init__(gpr.length_scales, search_space)
-
-    def _log_prob(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.logsigmoid(
-            (self._cond_gpr.sample_joint_posterior(x) - self._threshold) / self._tau
-        )
-
-    def eval_acqf(self, x: torch.Tensor) -> torch.Tensor:
-        return _aggregate_log_acqf_over_q_batch(self._log_prob(x))
 
 
 class UCB(BaseAcquisitionFunc):
@@ -319,7 +296,7 @@ class qConstrainedLogEI(BaseAcquisitionFunc):
         search_space: SearchSpace,
         threshold: float,
         n_qmc_samples: int,
-        qmc_seed: int,
+        qmc_seed: int | None,
         constraints_gpr_list: list[GPRegressor],
         constraints_threshold_list: list[float],
         normalized_params_of_running_trials: np.ndarray,
@@ -337,25 +314,42 @@ class qConstrainedLogEI(BaseAcquisitionFunc):
             normalized_params_of_running_trials,
             stabilizing_noise,
         )
-        self._constraints_acqf_list = [
-            qLogPI(
+        self._constraints_gpr_list = constraints_gpr_list
+        self._constraints_threshold_list = constraints_threshold_list
+        self._constraint_fixed_samples_list = [
+            _sample_from_normal_sobol(
+                dim=1 + normalized_params_of_running_trials.shape[0],
+                n_samples=n_qmc_samples,
+                seed=None if qmc_seed is None else qmc_seed + i + 1,
+            )
+            for i in range(len(constraints_gpr_list))
+        ]
+        self._constraint_conditional_gpr_list = [
+            ConditionalGPRegressor(
                 gpr=constraint_gpr,
-                search_space=search_space,
-                threshold=threshold,
-                n_qmc_samples=n_qmc_samples,
-                qmc_seed=qmc_seed + i + 1,
-                normalized_params_of_running_trials=normalized_params_of_running_trials,
+                X_running=self._acqf._X_running,
+                fixed_samples=fixed_samples,
                 stabilizing_noise=stabilizing_noise,
             )
-            for i, constraint_gpr in enumerate(constraints_gpr_list)
+            for constraint_gpr, fixed_samples in zip(
+                constraints_gpr_list, self._constraint_fixed_samples_list
+            )
         ]
         super().__init__(gpr.length_scales, search_space)
 
     def eval_acqf(self, x: torch.Tensor) -> torch.Tensor:
-        return _aggregate_log_acqf_over_q_batch(
-            self._acqf._log_improvement(x)
-            + sum(acqf._log_prob(x) for acqf in self._constraints_acqf_list)
-        )
+        log_improvement = self._acqf._get_log_improvement(x)
+        tau = 1e-2
+
+        constraint_log_feasibilities = [
+            torch.nn.functional.logsigmoid((conditional_gpr.sample(x) - threshold) / tau)
+            for threshold, conditional_gpr in zip(
+                self._constraints_threshold_list,
+                self._constraint_conditional_gpr_list,
+            )
+        ]
+        log_feasibility = torch.stack(constraint_log_feasibilities).sum(dim=0)
+        return _aggregate_log_acqf_over_q_batch(log_improvement + log_feasibility)
 
 
 class LogEHVI(BaseAcquisitionFunc):
