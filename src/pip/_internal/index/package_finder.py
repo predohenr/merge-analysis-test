@@ -1,27 +1,26 @@
 """Routines related to PyPI, indexes"""
 
 from __future__ import annotations
-
-import datetime
-import enum
-import functools
-import itertools
+from dataclasses import dataclass
+from pip._vendor.packaging.tags import Tag
+from pip._internal.metadata import select_backend
 import logging
 import re
-from collections.abc import Iterable
-from dataclasses import dataclass
+from pip._vendor.packaging.utils import NormalizedName, canonicalize_name
+from pip._vendor.packaging.version import parse as parse_version
 from typing import (
     TYPE_CHECKING,
     Optional,
     Union,
 )
-
+from collections.abc import Iterable
+import enum
+import functools
+import itertools
 from pip._vendor.packaging import specifiers
-from pip._vendor.packaging.tags import Tag
-from pip._vendor.packaging.utils import NormalizedName, canonicalize_name
 from pip._vendor.packaging.version import InvalidVersion, Version, _BaseVersion
-from pip._vendor.packaging.version import parse as parse_version
-
+from pip._internal.index.collector import IndexContent, LinkCollector, parse_links
+from pip._vendor.packaging.version import InvalidVersion, _BaseVersion
 from pip._internal.exceptions import (
     BestVersionAlreadyInstalled,
     DistributionNotFound,
@@ -29,8 +28,7 @@ from pip._internal.exceptions import (
     InvalidWheelFilename,
     UnsupportedWheel,
 )
-from pip._internal.index.collector import IndexContent, LinkCollector, parse_links
-from pip._internal.metadata import select_backend
+import datetime
 from pip._internal.models.candidate import InstallationCandidate
 from pip._internal.models.format_control import FormatControl
 from pip._internal.models.link import Link
