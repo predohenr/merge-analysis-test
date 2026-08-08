@@ -130,49 +130,203 @@ class RendererGL extends Renderer3D {
 
     this._cachedBlendMode = undefined;
   }
-
-  setupContext() {
-    this._setAttributeDefaults(this._pInst);
-    this._initContext();
-    // This redundant property is useful in reminding you that you are
-    // interacting with WebGLRenderingContext, still worth considering future removal
-    this.GL = this.drawingContext;
+  beginGeometry() {
+    if (this.geometryBuilder) {
+      throw new Error(
+        'It looks like `beginGeometry()` is being called while another p5.Geometry is already being build.'
+      );
+    }
+    this.geometryBuilder = new GeometryBuilder(this);
+    this.geometryBuilder.prevFillColor = this.states.fillColor;
+    this.fill(new Color([-1, -1, -1, -1]));
   }
 
   //////////////////////////////////////////////
-  // Rendering
+
+  noErase() {
+    if (this._isErasing) {
+      // Restore colors
+      this.states.setValue('curFillColor', this._cachedFillStyle.slice());
+      this.states.setValue('curStrokeColor', this._cachedStrokeStyle.slice());
+      // Restore blend mode
+      this.states.setValue('curBlendMode', this.preEraseBlend);
+      this.blendMode(this.preEraseBlend);
+      // Ensure that _applyBlendMode() sets preEraseBlend back to the original blend mode
+      this._isErasing = false;
+      this._applyBlendMode();
+    }
+  }
+
+  beginShape(...args) {
+    super.beginShape(...args);
+    // TODO remove when shape refactor is complete
+    // this.shapeBuilder.beginShape(...args);
+  }
+
+  // Positioning
+
   //////////////////////////////////////////////
 
-  /*_drawPoints(vertices, vertexBuffer) {
-    const gl = this.GL;
-    const pointShader = this._getPointShader();
-    pointShader.bindShader();
-    this._setGlobalUniforms(pointShader);
-    this._setPointUniforms(pointShader);
-    pointShader.bindTextures();
+  //////////////////////////////////////////////
 
-    this._bindBuffer(
-      vertexBuffer,
-      gl.ARRAY_BUFFER,
-      this._vToNArray(vertices),
-      Float32Array,
-      gl.STATIC_DRAW
+  normal(xorv, y, z) {
+    if (xorv instanceof Vector) {
+      this.states.setValue('_currentNormal', xorv);
+    } else {
+      this.states.setValue('_currentNormal', new Vector(xorv, y, z));
+    }
+    this.updateShapeVertexProperties();
+  }
+
+  _adjustDimensions(width, height) {
+    if (!this._maxTextureSize) {
+      this._maxTextureSize = this._getMaxTextureSize();
+    }
+    let maxTextureSize = this._maxTextureSize;
+
+    let maxAllowedPixelDimensions = Math.floor(
+      maxTextureSize / this._pixelDensity
     );
+    let adjustedWidth = Math.min(width, maxAllowedPixelDimensions);
+    let adjustedHeight = Math.min(height, maxAllowedPixelDimensions);
 
-    pointShader.enableAttrib(pointShader.attributes.aPosition, 3);
+    if (adjustedWidth !== width || adjustedHeight !== height) {
+      console.warn(
+        "Warning: The requested width/height exceeds hardware limits. " +
+          `Adjusting dimensions to width: ${adjustedWidth}, height: ${adjustedHeight}.`
+      );
+    }
 
-    this._applyColorBlend(this.states.curStrokeColor);
+    return { adjustedWidth, adjustedHeight };
+  }
 
-    gl.drawArrays(gl.Points, 0, vertices.length);
+  erase(opacityFill, opacityStroke) {
+    if (!this._isErasing) {
+      this.preEraseBlend = this.states.curBlendMode;
+      this._isErasing = true;
+      this.blendMode(constants.REMOVE);
+      this._cachedFillStyle = this.states.curFillColor.slice();
+      this.states.setValue('curFillColor', [1, 1, 1, opacityFill / 255]);
+      this._cachedStrokeStyle = this.states.curStrokeColor.slice();
+      this.states.setValue('curStrokeColor', [1, 1, 1, opacityStroke / 255]);
+    }
+  }
 
-    pointShader.unbindShader();
-  }*/
+  getWorldToScreenMatrix() {
+    const modelMatrix = this.states.uModelMatrix;
+    const viewMatrix = this.states.uViewMatrix;
+    const projectionMatrix = this.states.uPMatrix;
+    const projectedToScreenMatrix = new Matrix(4);
+    projectedToScreenMatrix.scale(this.width, this.height, 1);
+    projectedToScreenMatrix.translate([0.5, 0.5, 0.5]);
+    projectedToScreenMatrix.scale(0.5, -0.5, 0.5);
+
+    const modelViewMatrix = modelMatrix.copy().mult(viewMatrix);
+    const modelViewProjectionMatrix = modelViewMatrix.mult(projectionMatrix);
+    const worldToScreenMatrix = modelViewProjectionMatrix
+      .mult(projectedToScreenMatrix);
+    return worldToScreenMatrix;
+  }
 
   /**
-   * @private sets blending in gl context to curBlendMode
-   * @param  {Number[]} color [description]
-   * @return {Number[]}  Normalized numbers array
+   * Once all buffers have been bound, this checks to see if there are any
+   * remaining active attributes, likely left over from previous renders,
+   * and disables them so that they don't affect rendering.
+   * @private
    */
+
+  pixelDensity(newDensity) {
+    if (newDensity) {
+      return this._pInst.pixelDensity(newDensity);
+    }
+    return this._pInst.pixelDensity();
+  }
+
+  // Geometry Building
+
+  // Pass this off to the host instance so that we can treat a renderer and a
+
+  //////////////////////////////////////////////
+
+  endGeometry() {
+    if (!this.geometryBuilder) {
+      throw new Error(
+        'Make sure you call beginGeometry() before endGeometry()!'
+      );
+    }
+    const geometry = this.geometryBuilder.finish();
+    if (this.geometryBuilder.prevFillColor) {
+      this.fill(this.geometryBuilder.prevFillColor);
+    } else {
+      this.noFill();
+    }
+    this.geometryBuilder = undefined;
+    return geometry;
+  }
+
+  matchSize(fboToMatch, target) {
+    if (
+      fboToMatch.width !== target.width ||
+      fboToMatch.height !== target.height
+    ) {
+      fboToMatch.resize(target.width, target.height);
+    }
+
+    if (fboToMatch.pixelDensity() !== target.pixelDensity()) {
+      fboToMatch.pixelDensity(target.pixelDensity());
+    }
+  }
+
+  strokeCap(cap) {
+    this.curStrokeCap = cap;
+  }
+
+  //////////////////////////////////////////////
+
+  fill(...args) {
+    super.fill(...args);
+    //see material.js for more info on color blending in webgl
+    // const color = fn.color.apply(this._pInst, arguments);
+    const color = this.states.fillColor;
+    this.states.setValue('curFillColor', color._array);
+    this.states.setValue('drawMode', constants.FILL);
+    this.states.setValue('_useNormalMaterial', false);
+    this.states.setValue('_tex', null);
+  }
+
+  // framebuffer the same in filter()
+
+  drawShape(shape) {
+    const visitor = new PrimitiveToVerticesConverter({
+      curveDetail: this.states.curveDetail
+    });
+    shape.accept(visitor);
+    this.shapeBuilder.constructFromContours(shape, visitor.contours);
+
+    if (this.geometryBuilder) {
+      this.geometryBuilder.addImmediate(
+        this.shapeBuilder.geometry,
+        this.shapeBuilder.shapeMode,
+        { validateFaces: this._validateFaces }
+      );
+    } else if (this.states.fillColor || this.states.strokeColor) {
+      if (this.shapeBuilder.shapeMode === constants.POINTS) {
+        this._drawPoints(
+          this.shapeBuilder.geometry.vertices,
+          this.buffers.point
+        );
+      } else {
+        this._drawGeometry(this.shapeBuilder.geometry, {
+          mode: this.shapeBuilder.shapeMode,
+          count: this.drawShapeCount
+        });
+      }
+    }
+    this.drawShapeCount = 1;
+  }
+
+  // Rendering
+
   _applyBlendMode () {
     if (this._cachedBlendMode === this.states.curBlendMode) {
       return;
@@ -251,33 +405,252 @@ class RendererGL extends Renderer3D {
     this._cachedBlendMode = this.states.curBlendMode;
   }
 
+  /**
+   * @private sets blending in gl context to curBlendMode
+   * @param  {Number[]} color [description]
+   * @return {Number[]}  Normalized numbers array
+   */
+
+  //////////////////////////////////////////////
+
+  get uViewMatrix() {
+    return this.states.uViewMatrix;
+  }
+
+  model(model, count = 1) {
+    if (model.vertices.length > 0) {
+      if (this.geometryBuilder) {
+        this.geometryBuilder.addRetained(model);
+      } else {
+        if (!this.geometryInHash(model.gid)) {
+          model._edgesToVertices();
+          this._getOrMakeCachedBuffers(model);
+        }
+
+        this._drawGeometry(model, { count });
+      }
+    }
+  }
+
+  getFilterLayerTemp() {
+    if (!this.filterLayerTemp) {
+      this.filterLayerTemp = new Framebuffer(this);
+    }
+    return this.filterLayerTemp;
+  }
+
+  get uPMatrix() {
+    return this.states.uPMatrix;
+  }
+
+  filter(...args) {
+    let fbo = this.getFilterLayer();
+
+    // use internal shader for filter constants BLUR, INVERT, etc
+    let filterParameter = undefined;
+    let operation = undefined;
+    if (typeof args[0] === 'string') {
+      operation = args[0];
+      let useDefaultParam =
+        operation in filterParamDefaults && args[1] === undefined;
+      filterParameter = useDefaultParam
+        ? filterParamDefaults[operation]
+        : args[1];
+
+      // Create and store shader for constants once on initial filter call.
+      // Need to store multiple in case user calls different filters,
+      // eg. filter(BLUR) then filter(GRAY)
+      if (!(operation in this.defaultFilterShaders)) {
+        this.defaultFilterShaders[operation] = new Shader(
+          fbo.renderer,
+          filterShaderVert,
+          filterShaderFrags[operation]
+        );
+      }
+      this.states.setValue(
+        'filterShader',
+        this.defaultFilterShaders[operation]
+      );
+    }
+    // use custom user-supplied shader
+    else {
+      this.states.setValue('filterShader', args[0]);
+    }
+
+    // Setting the target to the framebuffer when applying a filter to a framebuffer.
+
+    const target = this.activeFramebuffer() || this;
+
+    // Resize the framebuffer 'fbo' and adjust its pixel density if it doesn't match the target.
+    this.matchSize(fbo, target);
+
+    fbo.draw(() => this.clear()); // prevent undesirable feedback effects accumulating secretly.
+
+    let texelSize = [
+      1 / (target.width * target.pixelDensity()),
+      1 / (target.height * target.pixelDensity())
+    ];
+
+    // apply blur shader with multiple passes.
+    if (operation === constants.BLUR) {
+      // Treating 'tmp' as a framebuffer.
+      const tmp = this.getFilterLayerTemp();
+      // Resize the framebuffer 'tmp' and adjust its pixel density if it doesn't match the target.
+      this.matchSize(tmp, target);
+      // setup
+      this.push();
+      this.states.setValue('strokeColor', null);
+      this.blendMode(constants.BLEND);
+
+      // draw main to temp buffer
+      this.shader(this.states.filterShader);
+      this.states.filterShader.setUniform('texelSize', texelSize);
+      this.states.filterShader.setUniform('canvasSize', [
+        target.width,
+        target.height
+      ]);
+      this.states.filterShader.setUniform(
+        'radius',
+        Math.max(1, filterParameter)
+      );
+
+      // Horiz pass: draw `target` to `tmp`
+      tmp.draw(() => {
+        this.states.filterShader.setUniform('direction', [1, 0]);
+        this.states.filterShader.setUniform('tex0', target);
+        this.clear();
+        this.shader(this.states.filterShader);
+        this.noLights();
+        this.plane(target.width, target.height);
+      });
+
+      // Vert pass: draw `tmp` to `fbo`
+      fbo.draw(() => {
+        this.states.filterShader.setUniform('direction', [0, 1]);
+        this.states.filterShader.setUniform('tex0', tmp);
+        this.clear();
+        this.shader(this.states.filterShader);
+        this.noLights();
+        this.plane(target.width, target.height);
+      });
+
+      this.pop();
+    }
+    // every other non-blur shader uses single pass
+    else {
+      fbo.draw(() => {
+        this.states.setValue('strokeColor', null);
+        this.blendMode(constants.BLEND);
+        this.shader(this.states.filterShader);
+        this.states.filterShader.setUniform('tex0', target);
+        this.states.filterShader.setUniform('texelSize', texelSize);
+        this.states.filterShader.setUniform('canvasSize', [
+          target.width,
+          target.height
+        ]);
+        // filterParameter uniform only used for POSTERIZE, and THRESHOLD
+        // but shouldn't hurt to always set
+        this.states.filterShader.setUniform('filterParameter', filterParameter);
+        this.noLights();
+        this.plane(target.width, target.height);
+      });
+    }
+    // draw fbo contents onto main renderer.
+    this.push();
+    this.states.setValue('strokeColor', null);
+    this.clear();
+    this.push();
+    this.states.setValue('imageMode', constants.CORNER);
+    this.blendMode(constants.BLEND);
+    target.filterCamera._resize();
+    this.setCamera(target.filterCamera);
+    this.resetMatrix();
+    this._drawingFilter = true;
+    this.image(
+      fbo,
+      0,
+      0,
+      fbo.width,
+      fbo.height,
+      -target.width / 2,
+      -target.height / 2,
+      target.width,
+      target.height
+    );
+    this._drawingFilter = false;
+    this.clearDepth();
+    this.pop();
+    this.pop();
+  }
+
+  //////////////////////////////////////////////
+
   _shaderOptions() {
     return undefined;
   }
 
-  _useShader(shader) {
-    const gl = this.GL;
-    gl.useProgram(shader._glProgram);
+  //////////////////////////////////////////////
+
+  // Setting
+
+  stroke(...args) {
+    super.stroke(...args);
+    // const color = fn.color.apply(this._pInst, arguments);
+    this.states.setValue('curStrokeColor', this.states.strokeColor._array);
   }
 
-  /**
-   * Once all buffers have been bound, this checks to see if there are any
-   * remaining active attributes, likely left over from previous renders,
-   * and disables them so that they don't affect rendering.
-   * @private
-   */
-  _disableRemainingAttributes(shader) {
-    for (const location of this.registerEnabled.values()) {
-      if (
-        !Object.keys(shader.attributes).some(
-          key => shader.attributes[key].location === location
-        )
-      ) {
-        this.GL.disableVertexAttribArray(location);
-        this.registerEnabled.delete(location);
-      }
-    }
+  vertexProperty(...args) {
+    this.currentShape.vertexProperty(...args);
   }
+
+  getFilterLayer() {
+    if (!this.filterLayer) {
+      this.filterLayer = new Framebuffer(this);
+    }
+    return this.filterLayer;
+  }
+
+  //////////////////////////////////////////////
+
+  get uMVMatrix() {
+    const m = this.uModelMatrix.copy();
+    m.mult(this.uViewMatrix);
+    return m;
+  }
+
+  //////////////////////////////////////////////
+
+  background(...args) {
+    const _col = this._pInst.color(...args);
+    this.clear(..._col._getRGBA());
+  }
+
+  /*_drawPoints(vertices, vertexBuffer) {
+    const gl = this.GL;
+    const pointShader = this._getPointShader();
+    pointShader.bindShader();
+    this._setGlobalUniforms(pointShader);
+    this._setPointUniforms(pointShader);
+    pointShader.bindTextures();
+
+    this._bindBuffer(
+      vertexBuffer,
+      gl.ARRAY_BUFFER,
+      this._vToNArray(vertices),
+      Float32Array,
+      gl.STATIC_DRAW
+    );
+
+    pointShader.enableAttrib(pointShader.attributes.aPosition, 3);
+
+    this._applyColorBlend(this.states.curStrokeColor);
+
+    gl.drawArrays(gl.Points, 0, vertices.length);
+
+    pointShader.unbindShader();
+  }*/
+
+  // COLOR
 
   _drawBuffers(geometry, { mode = constants.TRIANGLES, count }) {
     const gl = this.GL;
@@ -356,29 +729,16 @@ class RendererGL extends Renderer3D {
     }
   }
 
-  //////////////////////////////////////////////
-  // Setting
-  //////////////////////////////////////////////
-
-  _setAttributeDefaults(pInst) {
-    // See issue #3850, safer to enable AA in Safari
-    const applyAA = navigator.userAgent.toLowerCase().includes("safari");
-    const defaults = {
-      alpha: true,
-      depth: true,
-      stencil: true,
-      antialias: applyAA,
-      premultipliedAlpha: true,
-      preserveDrawingBuffer: true,
-      perPixelLighting: true,
-      version: 2,
-    };
-    if (pInst._glAttributes === null) {
-      pInst._glAttributes = defaults;
+  curveDetail(d) {
+    if (d === undefined) {
+      return this.states.curveDetail;
     } else {
-      pInst._glAttributes = Object.assign(defaults, pInst._glAttributes);
+      this.states.setValue('curveDetail', d);
     }
-    return;
+  }
+
+  strokeJoin(join) {
+    this.curStrokeJoin = join;
   }
 
   _setAttributes(key, value) {
@@ -429,6 +789,124 @@ class RendererGL extends Renderer3D {
     }
   }
 
+  remove() {
+    this.wrappedElt.remove();
+    this.wrappedElt = null;
+    this.canvas = null;
+    this.elt = null;
+  }
+
+  //////////////////////////////////////////////
+
+  // Shape drawing
+
+  get uModelMatrix() {
+    return this.states.uModelMatrix;
+  }
+
+  _useShader(shader) {
+    const gl = this.GL;
+    gl.useProgram(shader._glProgram);
+  }
+
+  _disableRemainingAttributes(shader) {
+    for (const location of this.registerEnabled.values()) {
+      if (
+        !Object.keys(shader.attributes).some(
+          key => shader.attributes[key].location === location
+        )
+      ) {
+        this.GL.disableVertexAttribArray(location);
+        this.registerEnabled.delete(location);
+      }
+    }
+  }
+
+  _setAttributeDefaults(pInst) {
+    // See issue #3850, safer to enable AA in Safari
+    const applyAA = navigator.userAgent.toLowerCase().includes("safari");
+    const defaults = {
+      alpha: true,
+      depth: true,
+      stencil: true,
+      antialias: applyAA,
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: true,
+      perPixelLighting: true,
+      version: 2,
+    };
+    if (pInst._glAttributes === null) {
+      pInst._glAttributes = defaults;
+    } else {
+      pInst._glAttributes = Object.assign(defaults, pInst._glAttributes);
+    }
+    return;
+  }
+
+  _getMaxTextureSize() {
+    const gl = this.drawingContext;
+    return gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  }
+
+  _updateSize() {}
+
+  blendMode(mode) {
+    if (
+      mode === constants.DARKEST ||
+      mode === constants.LIGHTEST ||
+      mode === constants.ADD ||
+      mode === constants.BLEND ||
+      mode === constants.SUBTRACT ||
+      mode === constants.SCREEN ||
+      mode === constants.EXCLUSION ||
+      mode === constants.REPLACE ||
+      mode === constants.MULTIPLY ||
+      mode === constants.REMOVE
+    )
+      this.states.setValue('curBlendMode', mode);
+    else if (
+      mode === constants.BURN ||
+      mode === constants.OVERLAY ||
+      mode === constants.HARD_LIGHT ||
+      mode === constants.SOFT_LIGHT ||
+      mode === constants.DODGE
+    ) {
+      console.warn(
+        'BURN, OVERLAY, HARD_LIGHT, SOFT_LIGHT, and DODGE only work for blendMode in 2D mode.'
+      );
+    }
+  }
+
+  endShape(mode, count) {
+    this.drawShapeCount = count;
+    super.endShape(mode, count);
+  }
+
+  //////////////////////////////////////////////
+
+  getSupportedIndividualVertexProperties() {
+    return {
+      textureCoordinates: true
+    };
+  }
+
+  getCommonVertexProperties() {
+    return {
+      ...super.getCommonVertexProperties(),
+      stroke: this.states.strokeColor,
+      fill: this.states.fillColor,
+      normal: this.states._currentNormal
+    };
+  }
+
+  _resetBuffersBeforeDraw() {
+    this.GL.clearStencil(0);
+    this.GL.clear(this.GL.DEPTH_BUFFER_BIT | this.GL.STENCIL_BUFFER_BIT);
+    if (!this._userEnabledStencil) {
+      this._internalDisable.call(this.GL, this.GL.STENCIL_TEST);
+    }
+  }
+
   _initContext() {
     if (this._pInst._glAttributes?.version !== 1) {
       // Unless WebGL1 is explicitly asked for, try to create a WebGL2 context
@@ -467,41 +945,37 @@ class RendererGL extends Renderer3D {
     }
   }
 
-  _updateSize() {}
-
-  _getMaxTextureSize() {
-    const gl = this.drawingContext;
-    return gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  buildGeometry(callback) {
+    this.beginGeometry();
+    callback();
+    return this.endGeometry();
   }
 
-  _adjustDimensions(width, height) {
-    if (!this._maxTextureSize) {
-      this._maxTextureSize = this._getMaxTextureSize();
-    }
-    let maxTextureSize = this._maxTextureSize;
+  drawTarget() {
+    return this.activeFramebuffers[this.activeFramebuffers.length - 1] || this;
+  }
 
-    let maxAllowedPixelDimensions = Math.floor(
-      maxTextureSize / this._pixelDensity
+  beginClip(options = {}) {
+    super.beginClip(options);
+
+    this.drawTarget()._isClipApplied = true;
+
+    const gl = this.GL;
+    gl.clearStencil(0);
+    gl.clear(gl.STENCIL_BUFFER_BIT);
+    this._internalEnable.call(gl, gl.STENCIL_TEST);
+    this._stencilTestOn = true;
+    gl.stencilFunc(
+      gl.ALWAYS, // the test
+      1, // reference value
+      0xff // mask
     );
-    let adjustedWidth = Math.min(width, maxAllowedPixelDimensions);
-    let adjustedHeight = Math.min(height, maxAllowedPixelDimensions);
-
-    if (adjustedWidth !== width || adjustedHeight !== height) {
-      console.warn(
-        "Warning: The requested width/height exceeds hardware limits. " +
-          `Adjusting dimensions to width: ${adjustedWidth}, height: ${adjustedHeight}.`
-      );
-    }
-
-    return { adjustedWidth, adjustedHeight };
-  }
-
-  _resetBuffersBeforeDraw() {
-    this.GL.clearStencil(0);
-    this.GL.clear(this.GL.DEPTH_BUFFER_BIT | this.GL.STENCIL_BUFFER_BIT);
-    if (!this._userEnabledStencil) {
-      this._internalDisable.call(this.GL, this.GL.STENCIL_TEST);
-    }
+    gl.stencilOp(
+      gl.KEEP, // what to do if the stencil test fails
+      gl.KEEP, // what to do if the depth test fails
+      gl.REPLACE // what to do if both tests pass
+    );
+    gl.disable(gl.DEPTH_TEST);
   }
 
   _applyClip() {
@@ -521,6 +995,14 @@ class RendererGL extends Renderer3D {
       gl.REPLACE // what to do if both tests pass
     );
     gl.disable(gl.DEPTH_TEST);
+  }
+
+  setupContext() {
+    this._setAttributeDefaults(this._pInst);
+    this._initContext();
+    // This redundant property is useful in reminding you that you are
+    // interacting with WebGLRenderingContext, still worth considering future removal
+    this.GL = this.drawingContext;
   }
 
   _unapplyClip() {
