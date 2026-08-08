@@ -614,6 +614,32 @@ func (p *Provider) loadConfigurationFromCRD(ctx context.Context, client Client) 
 	return conf
 }
 
+func (p *Provider) resolveReference(ctx context.Context, parentNs, ns, name string) (string, error) {
+	if strings.Contains(name, providerNamespaceSeparator) {
+		if !p.AllowCrossNamespace && strings.HasSuffix(name, providerNamespaceSeparator+providerName) {
+			return "", errors.New("when allowCrossNamespace is disabled, @kubernetescrd references are disallowed")
+		}
+
+		if !isCrossProviderNamespaceAllowed(p.CrossProviderNamespaces, parentNs) {
+			return "", fmt.Errorf("namespace %q is not in crossProviderNamespaces", parentNs)
+		}
+
+		if ns != "" {
+			log.Ctx(ctx).Warn().Msgf("Namespace %q is ignored in cross-provider context", ns)
+		}
+
+		return name, nil
+	}
+
+	ns = namespaceOrParentNamespace(ns, parentNs)
+
+	if !isNamespaceAllowed(p.AllowCrossNamespace, parentNs, ns) {
+		return "", errors.New("allowCrossNamespace is disabled, cross-namespace are disallowed")
+	}
+
+	return provider.Normalize(ns + "-" + name), nil
+}
+
 func (p *Provider) createErrorPageMiddleware(ctx context.Context, client Client, namespace string, errorPage *traefikv1alpha1.ErrorPage) (string, *dynamic.ErrorPage, *dynamic.Service, error) {
 	if errorPage == nil {
 		return "", nil, nil, nil
@@ -1578,7 +1604,7 @@ func resolveReference(ctx context.Context, parentNs, ns, name string, crossProvi
 		}
 
 		if ns != "" {
-			log.Ctx(ctx).Warn().Msgf("Namespace %q is ignored in cross-provider context", ns)
+			log.FromContext(ctx).Warnf("Namespace %q is ignored in cross-provider context", ns)
 		}
 
 		return name, nil
