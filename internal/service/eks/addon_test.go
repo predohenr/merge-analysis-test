@@ -401,24 +401,45 @@ func TestAccEKSAddon_tags(t *testing.T) {
 	})
 }
 
+func testAccCheckAddonExists(ctx context.Context, t *testing.T, n string, v *types.Addon) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		conn := acctest.ProviderMeta(ctx, t).EKSClient(ctx)
+
+		output, err := tfeks.FindAddonByTwoPartKey(ctx, conn, rs.Primary.Attributes[names.AttrClusterName], rs.Primary.Attributes["addon_name"])
+
+		if err != nil {
+			return err
+		}
+
+		*v = *output
+
+		return nil
+	}
+}
+
 func TestAccEKSAddon_namespace(t *testing.T) {
 	ctx := acctest.Context(t)
 	var addon types.Addon
-	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
+	rName := sdkacctest.RandomWithPrefix(acctest.ResourcePrefix)
 	resourceName := "aws_eks_addon.test"
 	addonName := "vpc-cni"
 	namespace := "my-namespace"
 
-	acctest.ParallelTest(ctx, t, resource.TestCase{
+	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.PreCheck(ctx, t); testAccPreCheck(ctx, t); testAccPreCheckAddon(ctx, t) },
 		ErrorCheck:               acctest.ErrorCheck(t, names.EKSServiceID),
 		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories,
-		CheckDestroy:             testAccCheckAddonDestroy(ctx, t),
+		CheckDestroy:             testAccCheckAddonDestroy(ctx),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccAddonConfig_namespace(rName, addonName, namespace),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckAddonExists(ctx, t, resourceName, &addon),
+					testAccCheckAddonExists(ctx, resourceName, &addon),
 					resource.TestCheckResourceAttr(resourceName, names.AttrNamespace, namespace),
 				),
 			},
@@ -432,7 +453,7 @@ func TestAccEKSAddon_namespace(t *testing.T) {
 	})
 }
 
-func testAccCheckAddonExists(ctx context.Context, t *testing.T, n string, v *types.Addon) resource.TestCheckFunc {
+func testAccCheckAddonExists(ctx context.Context, n string, v *types.Addon) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
