@@ -25,6 +25,29 @@ import (
 	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	k8sp "k8s.io/kubernetes/pkg/proxy"
+
+	"github.com/projectcalico/calico/felix/bpf"
+	"github.com/projectcalico/calico/felix/bpf/conntrack"
+	"github.com/projectcalico/calico/felix/bpf/maps"
+	"github.com/projectcalico/calico/felix/bpf/mock"
+	"github.com/projectcalico/calico/felix/bpf/nat"
+	proxy "github.com/projectcalico/calico/felix/bpf/proxy"
+	"github.com/projectcalico/calico/felix/bpf/routes"
+	"github.com/projectcalico/calico/felix/ip"
+)
+import (
+	"fmt"
+	"net"
+	"sync"
+	"time"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	k8sp "k8s.io/kubernetes/pkg/proxy"
 
