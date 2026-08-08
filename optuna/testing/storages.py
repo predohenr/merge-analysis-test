@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import os
 import socket
