@@ -1,6 +1,4 @@
-"""
-Seasonal Decomposition by Moving Averages
-"""
+"""Seasonal Decomposition by Moving Averages"""
 import warnings
 
 import numpy as np
