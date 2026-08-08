@@ -194,6 +194,15 @@ class LyricsRequestHandler(RequestHandler):
 
         return f"{url}?{urlencode(params)}"
 
+    @contextmanager
+    def handle_request(self) -> Iterator[None]:
+        try:
+            yield
+        except requests.JSONDecodeError:
+            self.warn("Could not decode response JSON data")
+        except requests.RequestException as exc:
+            self.warn("Request error: {}", exc)
+
     def get_text(
         self, url: str, params: JSONDict | None = None, **kwargs
     ) -> str:
@@ -219,15 +228,6 @@ class LyricsRequestHandler(RequestHandler):
         url = self.format_url(url, params)
         self.debug("Posting JSON to {}", url)
         return self.request("post", url, **kwargs).json()
-
-    @contextmanager
-    def handle_request(self) -> Iterator[None]:
-        try:
-            yield
-        except requests.JSONDecodeError:
-            self.warn("Could not decode response JSON data")
-        except requests.RequestException as exc:
-            self.warn("Request error: {}", exc)
 
 
 class BackendClass(type):
@@ -507,6 +507,11 @@ class SearchBackend(SoupMixin, Backend):
     def dist_thresh(self) -> float:
         return self.config["dist_thresh"].get(float)
 
+    @classmethod
+    def scrape(cls, html: str) -> str | None:
+        """Scrape the lyrics from the given HTML."""
+        raise NotImplementedError
+
     def check_match(
         self, target_artist: str, target_title: str, result: SearchResult
     ) -> bool:
@@ -553,11 +558,6 @@ class SearchBackend(SoupMixin, Backend):
 
         return None
 
-    @classmethod
-    def scrape(cls, html: str) -> str | None:
-        """Scrape the lyrics from the given HTML."""
-        raise NotImplementedError
-
 
 class Genius(SearchBackend):
     """Fetch lyrics from Genius via genius-api.
@@ -575,6 +575,14 @@ class Genius(SearchBackend):
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.config['genius_api_key']}"}
 
+    @classmethod
+    def scrape(cls, html: str) -> str | None:
+        if m := cls.LYRICS_IN_JSON_RE.search(html):
+            html_text = cls.remove_backslash(m[0]).replace(r"\n", "\n")
+            return cls.get_soup(html_text).get_text().strip()
+
+        return None
+
     def get_json(self, *args, **kwargs) -> GeniusAPI.Search:
         response: GeniusAPI.Response = super().get_json(*args, **kwargs)
         if "response" in response:
@@ -591,14 +599,6 @@ class Genius(SearchBackend):
         )
         for r in (hit["result"] for hit in search_data["response"]["hits"]):
             yield SearchResult(r["artist_names"], r["title"], r["url"])
-
-    @classmethod
-    def scrape(cls, html: str) -> str | None:
-        if m := cls.LYRICS_IN_JSON_RE.search(html):
-            html_text = cls.remove_backslash(m[0]).replace(r"\n", "\n")
-            return cls.get_soup(html_text).get_text().strip()
-
-        return None
 
 
 class Tekstowo(SearchBackend):
@@ -682,16 +682,6 @@ class Google(SearchBackend):
         html = Html.remove_ads(super().pre_process_html(html))
         return Html.remove_formatting(Html.merge_paragraphs(html))
 
-    def get_text(self, *args, **kwargs) -> str:
-        """Handle an error so that we can continue with the next URL."""
-        kwargs.setdefault("allow_redirects", False)
-        with self.handle_request():
-            try:
-                return super().get_text(*args, **kwargs)
-            except CaptchaError:
-                self.ignored_domains.add(urlparse(args[0]).netloc)
-                raise
-
     @staticmethod
     def get_part_dist(artist: str, title: str, part: str) -> float:
         """Return the distance between the given part and the artist and title.
@@ -733,6 +723,24 @@ class Google(SearchBackend):
 
         return SearchResult(result_artist, result_title, item["link"])
 
+    @classmethod
+    def scrape(cls, html: str) -> str | None:
+        # Get the longest text element (if any).
+        if strings := sorted(cls.get_soup(html).stripped_strings, key=len):
+            return strings[-1]
+
+        return None
+
+    def get_text(self, *args, **kwargs) -> str:
+        """Handle an error so that we can continue with the next URL."""
+        kwargs.setdefault("allow_redirects", False)
+        with self.handle_request():
+            try:
+                return super().get_text(*args, **kwargs)
+            except CaptchaError:
+                self.ignored_domains.add(urlparse(args[0]).netloc)
+                raise
+
     def search(self, artist: str, title: str) -> Iterable[SearchResult]:
         params = {
             "key": self.config["google_API_key"].as_str(),
@@ -757,14 +765,6 @@ class Google(SearchBackend):
         ):
             if result.source not in self.ignored_domains:
                 yield result
-
-    @classmethod
-    def scrape(cls, html: str) -> str | None:
-        # Get the longest text element (if any).
-        if strings := sorted(cls.get_soup(html).stripped_strings, key=len):
-            return strings[-1]
-
-        return None
 
 
 @dataclass
