@@ -19,6 +19,14 @@ from extras.models import (
     ConfigContextProfile,
     ConfigTemplate,
     EventRule,
+    ImageAttachment,
+    Tag,
+    TaggedItem,
+)
+from extras.models import (
+    ConfigContext,
+    ConfigContextProfile,
+    ConfigTemplate,
     ExportTemplate,
     ImageAttachment,
     Tag,
@@ -273,6 +281,139 @@ class ConfigContextTest(TestCase):
             site=site,
             location=location
         )
+
+    @tag('regression')
+    def test_multiple_tags_return_distinct_objects(self):
+        """
+        Tagged items use a generic relationship, which results in duplicate rows being returned when queried.
+        This is combated by appending distinct() to the config context querysets. This test creates a config
+        context assigned to two tags and ensures objects related to those same two tags result in only a single
+        config context record being returned.
+
+        See https://github.com/netbox-community/netbox/issues/5314
+        """
+        site = Site.objects.first()
+        platform = Platform.objects.first()
+        tenant = Tenant.objects.first()
+        tags = Tag.objects.all()
+
+        tag_context = ConfigContext.objects.create(
+            name="tag",
+            weight=100,
+            data={
+                "tag": 1
+            }
+        )
+        tag_context.tags.set(tags)
+
+        device = Device.objects.create(
+            name="Device 3",
+            site=site,
+            tenant=tenant,
+            platform=platform,
+            role=DeviceRole.objects.first(),
+            device_type=DeviceType.objects.first()
+        )
+        device.tags.set(tags)
+
+        annotated_queryset = Device.objects.filter(name=device.name).annotate_config_context_data()
+        self.assertEqual(ConfigContext.objects.get_for_object(device).count(), 1)
+        self.assertEqual(device.get_config_context(), annotated_queryset[0].get_config_context())
+
+    @tag('regression')
+    def test_multiple_tags_return_distinct_objects_with_separate_config_contexts(self):
+        """
+        Tagged items use a generic relationship, which results in duplicate rows being returned when queried.
+        This is combated by appending distinct() to the config context querysets. This test creates a config
+        context assigned to two tags and ensures objects related to those same two tags result in only a single
+        config context record being returned.
+
+        This test case is separate from the above in that it deals with multiple config context objects in play.
+
+        See https://github.com/netbox-community/netbox/issues/5387
+        """
+        site = Site.objects.first()
+        platform = Platform.objects.first()
+        tenant = Tenant.objects.first()
+        tag1, tag2 = list(Tag.objects.all())
+
+        tag_context_1 = ConfigContext.objects.create(
+            name="tag-1",
+            weight=100,
+            data={
+                "tag": 1
+            }
+        )
+        tag_context_1.tags.add(tag1)
+
+        tag_context_2 = ConfigContext.objects.create(
+            name="tag-2",
+            weight=100,
+            data={
+                "tag": 1
+            }
+        )
+        tag_context_2.tags.add(tag2)
+
+        device = Device.objects.create(
+            name="Device 3",
+            site=site,
+            tenant=tenant,
+            platform=platform,
+            role=DeviceRole.objects.first(),
+            device_type=DeviceType.objects.first()
+        )
+        device.tags.set([tag1, tag2])
+
+        annotated_queryset = Device.objects.filter(name=device.name).annotate_config_context_data()
+        self.assertEqual(ConfigContext.objects.get_for_object(device).count(), 2)
+        self.assertEqual(device.get_config_context(), annotated_queryset[0].get_config_context())
+
+    @tag('performance', 'regression')
+    def test_config_context_annotation_query_optimization(self):
+        """
+        Regression test for issue #20327: Ensure config context annotation
+        doesn't use expensive DISTINCT on main query.
+
+        Verifies that DISTINCT is only used in tag subquery where needed,
+        not on the main device query which is expensive for large datasets.
+        """
+        device = Device.objects.first()
+        queryset = Device.objects.filter(pk=device.pk).annotate_config_context_data()
+
+        # Main device query should NOT use DISTINCT
+        self.assertFalse(queryset.query.distinct)
+
+        # Check that tag subqueries DO use DISTINCT by inspecting the annotation
+        config_annotation = queryset.query.annotations.get('config_context_data')
+        self.assertIsNotNone(config_annotation)
+
+        def find_tag_subqueries(where_node):
+            """Find subqueries in WHERE clause that relate to tag filtering"""
+            subqueries = []
+
+            def traverse(node):
+                if hasattr(node, 'children'):
+                    for child in node.children:
+                        try:
+                            # In Django 6.0+, rhs is a Query directly; older Django wraps it in Subquery
+                            rhs_query = getattr(child.rhs, 'query', child.rhs)
+                            if rhs_query.model is TaggedItem:
+                                subqueries.append(rhs_query)
+                        except AttributeError:
+                            traverse(child)
+            traverse(where_node)
+            return subqueries
+
+        # In Django 6.0+, the annotation is a Query directly; older Django wraps it in Subquery
+        annotation_query = getattr(config_annotation, 'query', config_annotation)
+        # Find subqueries in the WHERE clause that should have DISTINCT
+        tag_subqueries = find_tag_subqueries(annotation_query.where)
+        distinct_subqueries = [sq for sq in tag_subqueries if sq.distinct]
+
+        # Verify we found at least one DISTINCT subquery for tags
+        self.assertEqual(len(distinct_subqueries), 1)
+        self.assertTrue(distinct_subqueries[0].distinct)
 
     def test_higher_weight_wins(self):
         device = Device.objects.first()
@@ -658,139 +799,6 @@ class ConfigContextTest(TestCase):
         with self.assertRaises(ValidationError):
             device.clean()
 
-    @tag('regression')
-    def test_multiple_tags_return_distinct_objects(self):
-        """
-        Tagged items use a generic relationship, which results in duplicate rows being returned when queried.
-        This is combated by appending distinct() to the config context querysets. This test creates a config
-        context assigned to two tags and ensures objects related to those same two tags result in only a single
-        config context record being returned.
-
-        See https://github.com/netbox-community/netbox/issues/5314
-        """
-        site = Site.objects.first()
-        platform = Platform.objects.first()
-        tenant = Tenant.objects.first()
-        tags = Tag.objects.all()
-
-        tag_context = ConfigContext.objects.create(
-            name="tag",
-            weight=100,
-            data={
-                "tag": 1
-            }
-        )
-        tag_context.tags.set(tags)
-
-        device = Device.objects.create(
-            name="Device 3",
-            site=site,
-            tenant=tenant,
-            platform=platform,
-            role=DeviceRole.objects.first(),
-            device_type=DeviceType.objects.first()
-        )
-        device.tags.set(tags)
-
-        annotated_queryset = Device.objects.filter(name=device.name).annotate_config_context_data()
-        self.assertEqual(ConfigContext.objects.get_for_object(device).count(), 1)
-        self.assertEqual(device.get_config_context(), annotated_queryset[0].get_config_context())
-
-    @tag('regression')
-    def test_multiple_tags_return_distinct_objects_with_separate_config_contexts(self):
-        """
-        Tagged items use a generic relationship, which results in duplicate rows being returned when queried.
-        This is combated by appending distinct() to the config context querysets. This test creates a config
-        context assigned to two tags and ensures objects related to those same two tags result in only a single
-        config context record being returned.
-
-        This test case is separate from the above in that it deals with multiple config context objects in play.
-
-        See https://github.com/netbox-community/netbox/issues/5387
-        """
-        site = Site.objects.first()
-        platform = Platform.objects.first()
-        tenant = Tenant.objects.first()
-        tag1, tag2 = list(Tag.objects.all())
-
-        tag_context_1 = ConfigContext.objects.create(
-            name="tag-1",
-            weight=100,
-            data={
-                "tag": 1
-            }
-        )
-        tag_context_1.tags.add(tag1)
-
-        tag_context_2 = ConfigContext.objects.create(
-            name="tag-2",
-            weight=100,
-            data={
-                "tag": 1
-            }
-        )
-        tag_context_2.tags.add(tag2)
-
-        device = Device.objects.create(
-            name="Device 3",
-            site=site,
-            tenant=tenant,
-            platform=platform,
-            role=DeviceRole.objects.first(),
-            device_type=DeviceType.objects.first()
-        )
-        device.tags.set([tag1, tag2])
-
-        annotated_queryset = Device.objects.filter(name=device.name).annotate_config_context_data()
-        self.assertEqual(ConfigContext.objects.get_for_object(device).count(), 2)
-        self.assertEqual(device.get_config_context(), annotated_queryset[0].get_config_context())
-
-    @tag('performance', 'regression')
-    def test_config_context_annotation_query_optimization(self):
-        """
-        Regression test for issue #20327: Ensure config context annotation
-        doesn't use expensive DISTINCT on main query.
-
-        Verifies that DISTINCT is only used in tag subquery where needed,
-        not on the main device query which is expensive for large datasets.
-        """
-        device = Device.objects.first()
-        queryset = Device.objects.filter(pk=device.pk).annotate_config_context_data()
-
-        # Main device query should NOT use DISTINCT
-        self.assertFalse(queryset.query.distinct)
-
-        # Check that tag subqueries DO use DISTINCT by inspecting the annotation
-        config_annotation = queryset.query.annotations.get('config_context_data')
-        self.assertIsNotNone(config_annotation)
-
-        def find_tag_subqueries(where_node):
-            """Find subqueries in WHERE clause that relate to tag filtering"""
-            subqueries = []
-
-            def traverse(node):
-                if hasattr(node, 'children'):
-                    for child in node.children:
-                        try:
-                            # In Django 6.0+, rhs is a Query directly; older Django wraps it in Subquery
-                            rhs_query = getattr(child.rhs, 'query', child.rhs)
-                            if rhs_query.model is TaggedItem:
-                                subqueries.append(rhs_query)
-                        except AttributeError:
-                            traverse(child)
-            traverse(where_node)
-            return subqueries
-
-        # In Django 6.0+, the annotation is a Query directly; older Django wraps it in Subquery
-        annotation_query = getattr(config_annotation, 'query', config_annotation)
-        # Find subqueries in the WHERE clause that should have DISTINCT
-        tag_subqueries = find_tag_subqueries(annotation_query.where)
-        distinct_subqueries = [sq for sq in tag_subqueries if sq.distinct]
-
-        # Verify we found at least one DISTINCT subquery for tags
-        self.assertEqual(len(distinct_subqueries), 1)
-        self.assertTrue(distinct_subqueries[0].distinct)
-
 
 class ConfigTemplateTest(TestCase):
     """
@@ -905,6 +913,27 @@ class ConfigTemplateTest(TestCase):
             self.assertEqual(autosync_records.count(), 0, "AutoSyncRecord should be deleted after detaching")
 
 
+class EventRuleTest(TestCase):
+
+    def test_action_data_clean_accepts_dict(self):
+        """
+        clean() should accept a JSON object (or null) as action_data.
+        """
+        for value in ({'key': 'value'}, None):
+            rule = EventRule(name='test', event_types=[OBJECT_CREATED], action_data=value)
+            rule.clean()
+
+    def test_action_data_clean_rejects_non_dict(self):
+        """
+        clean() should reject action_data that is valid JSON but not an object (#21989).
+        """
+        for value in ('test', 42, [1, 2, 3], True):
+            rule = EventRule(name='test', event_types=[OBJECT_CREATED], action_data=value)
+            with self.assertRaises(ValidationError) as cm:
+                rule.clean()
+            self.assertIn('action_data', cm.exception.message_dict)
+
+
 class ConfigTemplateDebugTest(TestCase):
     """
     Tests for the ConfigTemplate debug field and its effect on template rendering error output.
@@ -984,24 +1013,3 @@ class ExportTemplateContextTest(TestCase):
         ctx = ct.get_context()
 
         self.assertIs(ctx['dcim']['Site'], Site)
-
-
-class EventRuleTest(TestCase):
-
-    def test_action_data_clean_accepts_dict(self):
-        """
-        clean() should accept a JSON object (or null) as action_data.
-        """
-        for value in ({'key': 'value'}, None):
-            rule = EventRule(name='test', event_types=[OBJECT_CREATED], action_data=value)
-            rule.clean()
-
-    def test_action_data_clean_rejects_non_dict(self):
-        """
-        clean() should reject action_data that is valid JSON but not an object (#21989).
-        """
-        for value in ('test', 42, [1, 2, 3], True):
-            rule = EventRule(name='test', event_types=[OBJECT_CREATED], action_data=value)
-            with self.assertRaises(ValidationError) as cm:
-                rule.clean()
-            self.assertIn('action_data', cm.exception.message_dict)
