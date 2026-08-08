@@ -114,32 +114,13 @@ class WorkspaceDialog(QObject):
     def isPrinterGroup(self) -> bool:
         return self._is_printer_group
 
-    def setIsPrinterGroup(self, value: bool):
-        if value != self._is_printer_group:
-            self._is_printer_group = value
-            self.isPrinterGroupChanged.emit()
-
     @pyqtProperty(str, notify=variantTypeChanged)
     def variantType(self) -> str:
         return self._variant_type
 
-    def setVariantType(self, variant_type: str) -> None:
-        if self._variant_type != variant_type:
-            self._variant_type = variant_type
-            self.variantTypeChanged.emit()
-
     @pyqtProperty(str, notify=machineTypeChanged)
     def machineType(self) -> str:
         return self._machine_type
-
-    def setMachineType(self, machine_type: str) -> None:
-        self._machine_type = machine_type
-        self.machineTypeChanged.emit()
-
-    def setNumUserSettings(self, num_user_settings: int) -> None:
-        if self._num_user_settings != num_user_settings:
-            self._num_user_settings = num_user_settings
-            self.numVisibleSettingsChanged.emit()
 
     @pyqtProperty(int, notify=numUserSettingsChanged)
     def numUserSettings(self) -> int:
@@ -149,40 +130,17 @@ class WorkspaceDialog(QObject):
     def hasObjectsOnPlate(self) -> bool:
         return self._objects_on_plate
 
-    def setHasObjectsOnPlate(self, objects_on_plate):
-        if self._objects_on_plate != objects_on_plate:
-            self._objects_on_plate = objects_on_plate
-            self.objectsOnPlateChanged.emit()
-
     @pyqtProperty("QVariantList", notify = materialLabelsChanged)
     def materialLabels(self) -> List[str]:
         return self._material_labels
-
-    def setMaterialLabels(self, material_labels: List[str]) -> None:
-        if self._material_labels != material_labels:
-            self._material_labels = material_labels
-            self.materialLabelsChanged.emit()
 
     @pyqtProperty("QVariantList", notify=extrudersChanged)
     def extruders(self):
         return self._extruders
 
-    def setExtruders(self, extruders):
-        if self._extruders != extruders:
-            self._extruders = extruders
-            self.extrudersChanged.emit()
-
     @pyqtProperty(str, notify = machineNameChanged)
     def machineName(self) -> str:
         return self._machine_name
-
-    def setMachineName(self, machine_name: str) -> None:
-        if self._machine_name != machine_name:
-            self._machine_name = machine_name
-            self.machineNameChanged.emit()
-
-    def setCurrentMachineName(self, machine: str) -> None:
-        self._current_machine_name = machine
 
     @pyqtProperty(str, notify = machineNameChanged)
     def currentMachineName(self) -> str:
@@ -207,10 +165,6 @@ class WorkspaceDialog(QObject):
             self._current_machine_pos_index = 0
         return cast(MachineListModel, self._updatable_machines_model)
 
-    def setUpdatableMachines(self, updatable_machines: List[GlobalStack]) -> None:
-        self._updatable_machines_model.set_machines_filter(updatable_machines)
-        self.updatableMachinesChanged.emit()
-
     @pyqtProperty(bool, notify = isAbstractMachineChanged)
     def isAbstractMachine(self) -> bool:
         return self._is_abstract_machine
@@ -233,62 +187,25 @@ class WorkspaceDialog(QObject):
     def qualityType(self) -> str:
         return self._quality_type
 
-    def setQualityType(self, quality_type: str) -> None:
-        if self._quality_type != quality_type:
-            self._quality_type = quality_type
-            self.qualityTypeChanged.emit()
-
     @pyqtProperty(int, notify=numSettingsOverridenByQualityChangesChanged)
     def numSettingsOverridenByQualityChanges(self) -> int:
         return self._num_settings_overridden_by_quality_changes
-
-    def setNumSettingsOverriddenByQualityChanges(self, num_settings_overridden_by_quality_changes: int) -> None:
-        self._num_settings_overridden_by_quality_changes = num_settings_overridden_by_quality_changes
-        self.numSettingsOverridenByQualityChangesChanged.emit()
 
     @pyqtProperty(str, notify=qualityNameChanged)
     def qualityName(self) -> str:
         return self._quality_name
 
-    def setQualityName(self, quality_name: str) -> None:
-        if self._quality_name != quality_name:
-            self._quality_name = quality_name
-            self.qualityNameChanged.emit()
-
     @pyqtProperty(str, notify = intentNameChanged)
     def intentName(self) -> str:
         return self._intent_name
-
-    def setIntentName(self, intent_name: str) -> None:
-        if self._intent_name != intent_name:
-            try:
-                 self._intent_name = IntentTranslations.getInstance().getLabel(intent_name)
-            except KeyError:
-                self._intent_name = intent_name.title()
-            self.intentNameChanged.emit()
-
-        if not self._intent_name:
-            self._intent_name = IntentTranslations.getInstance().getLabel("default")
-            self.intentNameChanged.emit()
 
     @pyqtProperty(str, notify=activeModeChanged)
     def activeMode(self) -> str:
         return self._active_mode
 
-    def setActiveMode(self, active_mode: int) -> None:
-        if active_mode == 0:
-            self._active_mode = i18n_catalog.i18nc("@title:tab", "Recommended")
-        else:
-            self._active_mode = i18n_catalog.i18nc("@title:tab", "Custom")
-        self.activeModeChanged.emit()
-
     @pyqtProperty(bool, notify = hasVisibleSettingsFieldChanged)
     def hasVisibleSettingsField(self) -> bool:
         return self._has_visible_settings_field
-
-    def setHasVisibleSettingsField(self, has_visible_settings_field: bool) -> None:
-        self._has_visible_settings_field = has_visible_settings_field
-        self.hasVisibleSettingsFieldChanged.emit()
 
     @pyqtProperty(int, constant = True)
     def totalNumberOfSettings(self) -> int:
@@ -300,11 +217,6 @@ class WorkspaceDialog(QObject):
     @pyqtProperty(int, notify = numVisibleSettingsChanged)
     def numVisibleSettings(self) -> int:
         return self._num_visible_settings
-
-    def setNumVisibleSettings(self, num_visible_settings: int) -> None:
-        if self._num_visible_settings != num_visible_settings:
-            self._num_visible_settings = num_visible_settings
-            self.numVisibleSettingsChanged.emit()
 
     @pyqtProperty(bool, notify = machineConflictChanged)
     def machineConflict(self) -> bool:
@@ -323,39 +235,18 @@ class WorkspaceDialog(QObject):
         if key in self._result:
             self._result[key] = strategy
 
-    def getMachineToOverride(self) -> str:
-        return self._override_machine
-
     @pyqtSlot(str)
     def setMachineToOverride(self, machine_name: str) -> None:
         self._override_machine = machine_name
         self.updateCompatibleMachine()
 
-    def updateCompatibleMachine(self):
-        registry = ContainerRegistry.getInstance()
-        containers_expected = registry.findDefinitionContainers(name=self._machine_type)
-        containers_selected = registry.findContainerStacks(id=self._override_machine)
-        if len(containers_expected) == 1 and len(containers_selected) == 1:
-            new_compatible_machine = (containers_expected[0] == containers_selected[0].definition)
-            if new_compatible_machine != self._is_compatible_machine:
-                self._is_compatible_machine = new_compatible_machine
-                self.isCompatibleMachineChanged.emit()
-
     @pyqtProperty(bool, notify = isCompatibleMachineChanged)
     def isCompatibleMachine(self) -> bool:
         return self._is_compatible_machine
 
-    def setIsUcp(self, isUcp: bool) -> None:
-        if isUcp != self._is_ucp:
-            self._is_ucp = isUcp
-            self.isUcpChanged.emit()
-
     @pyqtProperty(bool, notify=isUcpChanged)
     def isUcp(self):
         return self._is_ucp
-
-    def setAllowCreatemachine(self, allow_create_machine):
-        self._allow_create_machine = allow_create_machine
 
     @pyqtProperty(bool, constant = True)
     def allowCreateMachine(self):
@@ -379,25 +270,6 @@ class WorkspaceDialog(QObject):
 
         Application.getInstance().getBackend().close()
 
-    def setMaterialConflict(self, material_conflict: bool) -> None:
-        if self._has_material_conflict != material_conflict:
-            self._has_material_conflict = material_conflict
-            self.materialConflictChanged.emit()
-
-    def setMachineConflict(self, machine_conflict: bool) -> None:
-        if self._has_machine_conflict != machine_conflict:
-            self._has_machine_conflict = machine_conflict
-            self.machineConflictChanged.emit()
-
-    def setQualityChangesConflict(self, quality_changes_conflict: bool) -> None:
-        if self._has_quality_changes_conflict != quality_changes_conflict:
-            self._has_quality_changes_conflict = quality_changes_conflict
-            self.qualityChangesConflictChanged.emit()
-
-    def setMissingPackagesMetadata(self, missing_package_metadata: List[Dict[str, str]]) -> None:
-        self._missing_package_metadata = missing_package_metadata
-        self.missingPackagesChanged.emit()
-
     @pyqtProperty("QVariantList", notify=missingPackagesChanged)
     def missingPackages(self) -> List[Dict[str, str]]:
         return self._missing_package_metadata
@@ -408,23 +280,6 @@ class WorkspaceDialog(QObject):
         if not marketplace_plugin:
             Logger.warning("Could not show dialog to install missing plug-ins. Is Marketplace plug-in not available?")
         marketplace_plugin.showInstallMissingPackageDialog(self._missing_package_metadata, self.showMissingMaterialsWarning)  # type: ignore
-
-    def getResult(self) -> Dict[str, Optional[str]]:
-        if "machine" in self._result and self.updatableMachinesModel.count <= 1 and not self._is_ucp:
-            self._result["machine"] = None
-        if "quality_changes" in self._result and not self._has_quality_changes_conflict:
-            self._result["quality_changes"] = None
-        if "material" in self._result and not self._has_material_conflict:
-            self._result["material"] = None
-
-        # If the machine needs to be re-created, the definition_changes should also be re-created.
-        # If the machine strategy is None, it means that there is no name conflict with existing ones. In this case
-        # new definitions changes are created
-        if "machine" in self._result:
-            if self._result["machine"] == "new" or self._result["machine"] is None and self._result["definition_changes"] is None:
-                self._result["definition_changes"] = "new"
-
-        return self._result
 
     @pyqtSlot()
     def notifyClosed(self) -> None:
@@ -470,9 +325,162 @@ class WorkspaceDialog(QObject):
         result_message.actionTriggered.connect(self._onMessageActionTriggered)
         result_message.show()
 
+    def setIsPrinterGroup(self, value: bool):
+        if value != self._is_printer_group:
+            self._is_printer_group = value
+            self.isPrinterGroupChanged.emit()
+
+    def setVariantType(self, variant_type: str) -> None:
+        if self._variant_type != variant_type:
+            self._variant_type = variant_type
+            self.variantTypeChanged.emit()
+
+    def setMachineType(self, machine_type: str) -> None:
+        self._machine_type = machine_type
+        self.machineTypeChanged.emit()
+
+    def setNumUserSettings(self, num_user_settings: int) -> None:
+        if self._num_user_settings != num_user_settings:
+            self._num_user_settings = num_user_settings
+            self.numVisibleSettingsChanged.emit()
+
+    def setHasObjectsOnPlate(self, objects_on_plate):
+        if self._objects_on_plate != objects_on_plate:
+            self._objects_on_plate = objects_on_plate
+            self.objectsOnPlateChanged.emit()
+
+    def setMaterialLabels(self, material_labels: List[str]) -> None:
+        if self._material_labels != material_labels:
+            self._material_labels = material_labels
+            self.materialLabelsChanged.emit()
+
+    def setExtruders(self, extruders):
+        if self._extruders != extruders:
+            self._extruders = extruders
+            self.extrudersChanged.emit()
+
+    def setMachineName(self, machine_name: str) -> None:
+        if self._machine_name != machine_name:
+            self._machine_name = machine_name
+            self.machineNameChanged.emit()
+
+    def setCurrentMachineName(self, machine: str) -> None:
+        self._current_machine_name = machine
+
+    def setUpdatableMachines(self, updatable_machines: List[GlobalStack]) -> None:
+        self._updatable_machines_model.set_machines_filter(updatable_machines)
+        self.updatableMachinesChanged.emit()
+
+    def setQualityType(self, quality_type: str) -> None:
+        if self._quality_type != quality_type:
+            self._quality_type = quality_type
+            self.qualityTypeChanged.emit()
+
+    def setNumSettingsOverriddenByQualityChanges(self, num_settings_overridden_by_quality_changes: int) -> None:
+        self._num_settings_overridden_by_quality_changes = num_settings_overridden_by_quality_changes
+        self.numSettingsOverridenByQualityChangesChanged.emit()
+
+    def setQualityName(self, quality_name: str) -> None:
+        if self._quality_name != quality_name:
+            self._quality_name = quality_name
+            self.qualityNameChanged.emit()
+
+    def setIntentName(self, intent_name: str) -> None:
+        if self._intent_name != intent_name:
+            try:
+                 self._intent_name = IntentTranslations.getInstance().getLabel(intent_name)
+            except KeyError:
+                self._intent_name = intent_name.title()
+            self.intentNameChanged.emit()
+
+        if not self._intent_name:
+            self._intent_name = IntentTranslations.getInstance().getLabel("default")
+            self.intentNameChanged.emit()
+
+    def setActiveMode(self, active_mode: int) -> None:
+        if active_mode == 0:
+            self._active_mode = i18n_catalog.i18nc("@title:tab", "Recommended")
+        else:
+            self._active_mode = i18n_catalog.i18nc("@title:tab", "Custom")
+        self.activeModeChanged.emit()
+
+    def setHasVisibleSettingsField(self, has_visible_settings_field: bool) -> None:
+        self._has_visible_settings_field = has_visible_settings_field
+        self.hasVisibleSettingsFieldChanged.emit()
+
+    def setNumVisibleSettings(self, num_visible_settings: int) -> None:
+        if self._num_visible_settings != num_visible_settings:
+            self._num_visible_settings = num_visible_settings
+            self.numVisibleSettingsChanged.emit()
+
+    def getMachineToOverride(self) -> str:
+        return self._override_machine
+
+    def updateCompatibleMachine(self):
+        registry = ContainerRegistry.getInstance()
+        containers_expected = registry.findDefinitionContainers(name=self._machine_type)
+        containers_selected = registry.findContainerStacks(id=self._override_machine)
+        if len(containers_expected) == 1 and len(containers_selected) == 1:
+            new_compatible_machine = (containers_expected[0] == containers_selected[0].definition)
+            if new_compatible_machine != self._is_compatible_machine:
+                self._is_compatible_machine = new_compatible_machine
+                self.isCompatibleMachineChanged.emit()
+
+    def setIsUcp(self, isUcp: bool) -> None:
+        if isUcp != self._is_ucp:
+            self._is_ucp = isUcp
+            self.isUcpChanged.emit()
+
+    def setAllowCreatemachine(self, allow_create_machine):
+        self._allow_create_machine = allow_create_machine
+
+    def setMaterialConflict(self, material_conflict: bool) -> None:
+        if self._has_material_conflict != material_conflict:
+            self._has_material_conflict = material_conflict
+            self.materialConflictChanged.emit()
+
+    def setMachineConflict(self, machine_conflict: bool) -> None:
+        if self._has_machine_conflict != machine_conflict:
+            self._has_machine_conflict = machine_conflict
+            self.machineConflictChanged.emit()
+
+    def setQualityChangesConflict(self, quality_changes_conflict: bool) -> None:
+        if self._has_quality_changes_conflict != quality_changes_conflict:
+            self._has_quality_changes_conflict = quality_changes_conflict
+            self.qualityChangesConflictChanged.emit()
+
+    def setMissingPackagesMetadata(self, missing_package_metadata: List[Dict[str, str]]) -> None:
+        self._missing_package_metadata = missing_package_metadata
+        self.missingPackagesChanged.emit()
+
+    def getResult(self) -> Dict[str, Optional[str]]:
+        if "machine" in self._result and self.updatableMachinesModel.count <= 1 and not self._is_ucp:
+            self._result["machine"] = None
+        if "quality_changes" in self._result and not self._has_quality_changes_conflict:
+            self._result["quality_changes"] = None
+        if "material" in self._result and not self._has_material_conflict:
+            self._result["material"] = None
+
+        # If the machine needs to be re-created, the definition_changes should also be re-created.
+        # If the machine strategy is None, it means that there is no name conflict with existing ones. In this case
+        # new definitions changes are created
+        if "machine" in self._result:
+            if self._result["machine"] == "new" or self._result["machine"] is None and self._result["definition_changes"] is None:
+                self._result["definition_changes"] = "new"
+
+        return self._result
+
     def _onMessageActionTriggered(self, message: Message, sync_message_action: str) -> None:
         if sync_message_action == "install_materials":
             self.installMissingPackages()
             message.hide()
         elif sync_message_action == "learn_more":
             QDesktopServices.openUrl(QUrl("https://support.ultimaker.com/s/article/1667411313594"))
+
+
+    def _onMessageActionTriggered(self, message: Message, sync_message_action: str) -> None:
+        if sync_message_action == "install_materials":
+            self.installMissingPackages()
+            message.hide()
+        elif sync_message_action == "learn_more":
+            QDesktopServices.openUrl(QUrl("https://support.ultimaker.com/hc/en-us/articles/360011968360-Using-the-Ultimaker-Marketplace"))
