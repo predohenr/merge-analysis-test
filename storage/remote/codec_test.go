@@ -20,6 +20,35 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
+	"testing"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
+)
+import (
+	"bytes"
+	"compress/gzip"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -734,6 +763,17 @@ func TestMergeLabels(t *testing.T) {
 	}
 }
 
+func TestDecodeReadRequestTooLarge(t *testing.T) {
+	// 5-byte snappy stream whose header claims 256 MiB decoded length,
+	// well above decodeReadLimit (32 MiB).
+	bomb := []byte{0x80, 0x80, 0x80, 0x80, 0x01}
+	req, err := http.NewRequest(http.MethodPost, "/", bytes.NewReader(bomb))
+	require.NoError(t, err)
+
+	_, err = DecodeReadRequest(req)
+	require.ErrorContains(t, err, "exceeds limit")
+}
+
 func TestDecodeOTLPWriteRequestGzipSizeLimit(t *testing.T) {
 	// Build a valid OTLP request whose serialized protobuf exceeds decodeReadLimit.
 	// A metric description filled with repeated characters compresses very
@@ -763,17 +803,6 @@ func TestDecodeOTLPWriteRequestGzipSizeLimit(t *testing.T) {
 	// protobuf cannot be parsed into a valid ExportRequest.
 	_, err = DecodeOTLPWriteRequest(req)
 	require.Error(t, err)
-}
-
-func TestDecodeReadRequestTooLarge(t *testing.T) {
-	// 5-byte snappy stream whose header claims 256 MiB decoded length,
-	// well above decodeReadLimit (32 MiB).
-	bomb := []byte{0x80, 0x80, 0x80, 0x80, 0x01}
-	req, err := http.NewRequest(http.MethodPost, "/", bytes.NewReader(bomb))
-	require.NoError(t, err)
-
-	_, err = DecodeReadRequest(req)
-	require.ErrorContains(t, err, "exceeds limit")
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
