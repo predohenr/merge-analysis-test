@@ -58,7 +58,8 @@ import matplotlib.legend as mlegend
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Rectangle
 from matplotlib.text import Text
-from matplotlib.transforms import (Affine2D, Bbox, BboxTransformTo, TransformedBbox)
+from matplotlib.transforms import (Affine2D, Bbox, BboxTransformTo,
+                                   TransformedBbox)
 
 _log = logging.getLogger(__name__)
 
