@@ -14,6 +14,30 @@ import (
 	"time"
 
 	gorillaws "github.com/gorilla/websocket"
+	"github.com/juju/loggo/v2"
+	"github.com/juju/tc"
+	"github.com/juju/worker/v5/dependency"
+	"github.com/juju/worker/v5/workertest"
+	"go.uber.org/mock/gomock"
+
+	"github.com/juju/juju/api/base"
+	apilogsender "github.com/juju/juju/api/logsender"
+	"github.com/juju/juju/internal/testhelpers"
+	"github.com/juju/juju/internal/testing"
+	"github.com/juju/juju/internal/worker/logsender"
+	"github.com/juju/juju/internal/worker/logsender/mocks"
+	"github.com/juju/juju/rpc/params"
+)
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/url"
+	"sync"
+	"sync/atomic"
+	stdtesting "testing"
+	"time"
+
 	"github.com/juju/loggo/v3"
 	"github.com/juju/tc"
 	"github.com/juju/worker/v5/dependency"
