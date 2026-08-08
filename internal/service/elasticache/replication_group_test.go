@@ -3919,123 +3919,6 @@ func TestAccElastiCacheReplicationGroup_RemoveNodeGroups_Redis7ToValkey8_3NodeGr
 	})
 }
 
-func TestAccElastiCacheReplicationGroup_Snapshot_ClusterModeDisabled_Redis7(t *testing.T) {
-	ctx := acctest.Context(t)
-	if testing.Short() {
-		t.Skip("skipping long-running test in short mode")
-	}
-
-	var rg awstypes.ReplicationGroup
-	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
-	resourceName := "aws_elasticache_replication_group.test"
-
-	acctest.ParallelTest(ctx, t, resource.TestCase{
-		PreCheck:                 func() { acctest.PreCheck(ctx, t) },
-		ErrorCheck:               acctest.ErrorCheck(t, names.ElastiCacheServiceID),
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories,
-		CheckDestroy:             testAccCheckReplicationGroupDestroy(ctx, t),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccReplicationGroupConfig_snapshotDisabledClusterModeDisabled(rName, "redis", "7.1", 3),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					testAccCheckReplicationGroupExists(ctx, t, resourceName, &rg),
-					resource.TestCheckResourceAttr(resourceName, names.AttrEngine, "redis"),
-					resource.TestCheckResourceAttr(resourceName, names.AttrEngineVersion, "7.1"),
-					resource.TestCheckResourceAttr(resourceName, "multi_az_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "num_cache_clusters", "3"),
-					resource.TestCheckResourceAttr(resourceName, "member_clusters.#", "3"),
-					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "0"),
-				),
-			},
-			{
-				ResourceName:            resourceName,
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{names.AttrApplyImmediately, "auth_token_update_strategy"},
-			},
-			{
-				PreConfig: func() {
-					conn := acctest.ProviderMeta(ctx, t).ElastiCacheClient(ctx)
-					timeout := 40 * time.Minute
-					oldPrimary := formatReplicationGroupClusterID(rName, 1)
-					newPrimary := formatReplicationGroupClusterID(rName, 2)
-
-					if err := resourceReplicationGroupSetPrimaryClusterID(ctx, conn, rName, newPrimary, timeout); err != nil {
-						t.Fatalf("error changing primary cache cluster: %s", err)
-					}
-
-					if _, err := tfelasticache.WaitCacheClusterAvailable(ctx, conn, oldPrimary, timeout); err != nil {
-						t.Fatalf("error Cache Cluster Unavailable (%s): %s", oldPrimary, err)
-					}
-				},
-				Config: testAccReplicationGroupConfig_snapshotDisabledClusterModeDisabled(rName, "redis", "7.1", 3),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					testAccCheckReplicationGroupExists(ctx, t, resourceName, &rg),
-					resource.TestCheckResourceAttr(resourceName, names.AttrEngine, "redis"),
-					resource.TestCheckResourceAttr(resourceName, names.AttrEngineVersion, "7.1"),
-					resource.TestCheckResourceAttr(resourceName, "multi_az_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "num_cache_clusters", "3"),
-					resource.TestCheckResourceAttr(resourceName, "member_clusters.#", "3"),
-					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "0"),
-				),
-			},
-			{
-				PreConfig: func() {
-					conn := acctest.ProviderMeta(ctx, t).ElastiCacheClient(ctx)
-					timeout := 40 * time.Minute
-					cacheClusterToRemove := formatReplicationGroupClusterID(rName, 1)
-
-					if err := tfelasticache.DeleteCacheCluster(ctx, conn, cacheClusterToRemove, ""); err != nil {
-						t.Fatalf("error deleting Cache Cluster (%s): %s", cacheClusterToRemove, err)
-					}
-
-					if _, err := tfelasticache.WaitCacheClusterDeleted(ctx, conn, cacheClusterToRemove, timeout); err != nil {
-						t.Fatalf("error deleting Cache Cluster (%s): %s", cacheClusterToRemove, err)
-					}
-				},
-				Config: testAccReplicationGroupConfig_snapshotDisabledClusterModeDisabled(rName, "redis", "7.1", 2),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					testAccCheckReplicationGroupExists(ctx, t, resourceName, &rg),
-					resource.TestCheckResourceAttr(resourceName, names.AttrEngine, "redis"),
-					resource.TestCheckResourceAttr(resourceName, names.AttrEngineVersion, "7.1"),
-					resource.TestCheckResourceAttr(resourceName, "multi_az_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "num_cache_clusters", "2"),
-					resource.TestCheckResourceAttr(resourceName, "member_clusters.#", "2"),
-					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "0"),
-				),
-			},
-			{
-				Config: testAccReplicationGroupConfig_snapshotEnabledClusterModeDisabled(rName, "redis", "7.1", 2),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					testAccCheckReplicationGroupExists(ctx, t, resourceName, &rg),
-					resource.TestCheckResourceAttr(resourceName, names.AttrEngine, "redis"),
-					resource.TestCheckResourceAttr(resourceName, names.AttrEngineVersion, "7.1"),
-					resource.TestCheckResourceAttr(resourceName, "multi_az_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "num_cache_clusters", "2"),
-					resource.TestCheckResourceAttr(resourceName, "member_clusters.#", "2"),
-					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
-					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "10"),
-				),
-			},
-		},
-	})
-}
-
 func TestAccElastiCacheReplicationGroup_Snapshot_ClusterModeDisabled_Valkey7(t *testing.T) {
 	ctx := acctest.Context(t)
 	if testing.Short() {
@@ -4256,6 +4139,123 @@ func TestAccElastiCacheReplicationGroup_Snapshot_ClusterModeEnabled_Valkey7(t *t
 					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtTrue),
 					resource.TestCheckResourceAttr(resourceName, "num_node_groups", "2"),
 					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtTrue),
+					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "10"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccElastiCacheReplicationGroup_Snapshot_ClusterModeDisabled_Redis7(t *testing.T) {
+	ctx := acctest.Context(t)
+	if testing.Short() {
+		t.Skip("skipping long-running test in short mode")
+	}
+
+	var rg awstypes.ReplicationGroup
+	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
+	resourceName := "aws_elasticache_replication_group.test"
+
+	acctest.ParallelTest(ctx, t, resource.TestCase{
+		PreCheck:                 func() { acctest.PreCheck(ctx, t) },
+		ErrorCheck:               acctest.ErrorCheck(t, names.ElastiCacheServiceID),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckReplicationGroupDestroy(ctx, t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccReplicationGroupConfig_snapshotDisabledClusterModeDisabled(rName, "redis", "7.1", 3),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckReplicationGroupExists(ctx, t, resourceName, &rg),
+					resource.TestCheckResourceAttr(resourceName, names.AttrEngine, "redis"),
+					resource.TestCheckResourceAttr(resourceName, names.AttrEngineVersion, "7.1"),
+					resource.TestCheckResourceAttr(resourceName, "multi_az_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "num_cache_clusters", "3"),
+					resource.TestCheckResourceAttr(resourceName, "member_clusters.#", "3"),
+					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "0"),
+				),
+			},
+			{
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{names.AttrApplyImmediately, "auth_token_update_strategy"},
+			},
+			{
+				PreConfig: func() {
+					conn := acctest.ProviderMeta(ctx, t).ElastiCacheClient(ctx)
+					timeout := 40 * time.Minute
+					oldPrimary := formatReplicationGroupClusterID(rName, 1)
+					newPrimary := formatReplicationGroupClusterID(rName, 2)
+
+					if err := resourceReplicationGroupSetPrimaryClusterID(ctx, conn, rName, newPrimary, timeout); err != nil {
+						t.Fatalf("error changing primary cache cluster: %s", err)
+					}
+
+					if _, err := tfelasticache.WaitCacheClusterAvailable(ctx, conn, oldPrimary, timeout); err != nil {
+						t.Fatalf("error Cache Cluster Unavailable (%s): %s", oldPrimary, err)
+					}
+				},
+				Config: testAccReplicationGroupConfig_snapshotDisabledClusterModeDisabled(rName, "redis", "7.1", 3),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckReplicationGroupExists(ctx, t, resourceName, &rg),
+					resource.TestCheckResourceAttr(resourceName, names.AttrEngine, "redis"),
+					resource.TestCheckResourceAttr(resourceName, names.AttrEngineVersion, "7.1"),
+					resource.TestCheckResourceAttr(resourceName, "multi_az_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "num_cache_clusters", "3"),
+					resource.TestCheckResourceAttr(resourceName, "member_clusters.#", "3"),
+					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "0"),
+				),
+			},
+			{
+				PreConfig: func() {
+					conn := acctest.ProviderMeta(ctx, t).ElastiCacheClient(ctx)
+					timeout := 40 * time.Minute
+					cacheClusterToRemove := formatReplicationGroupClusterID(rName, 1)
+
+					if err := tfelasticache.DeleteCacheCluster(ctx, conn, cacheClusterToRemove, ""); err != nil {
+						t.Fatalf("error deleting Cache Cluster (%s): %s", cacheClusterToRemove, err)
+					}
+
+					if _, err := tfelasticache.WaitCacheClusterDeleted(ctx, conn, cacheClusterToRemove, timeout); err != nil {
+						t.Fatalf("error deleting Cache Cluster (%s): %s", cacheClusterToRemove, err)
+					}
+				},
+				Config: testAccReplicationGroupConfig_snapshotDisabledClusterModeDisabled(rName, "redis", "7.1", 2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckReplicationGroupExists(ctx, t, resourceName, &rg),
+					resource.TestCheckResourceAttr(resourceName, names.AttrEngine, "redis"),
+					resource.TestCheckResourceAttr(resourceName, names.AttrEngineVersion, "7.1"),
+					resource.TestCheckResourceAttr(resourceName, "multi_az_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "num_cache_clusters", "2"),
+					resource.TestCheckResourceAttr(resourceName, "member_clusters.#", "2"),
+					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "0"),
+				),
+			},
+			{
+				Config: testAccReplicationGroupConfig_snapshotEnabledClusterModeDisabled(rName, "redis", "7.1", 2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckReplicationGroupExists(ctx, t, resourceName, &rg),
+					resource.TestCheckResourceAttr(resourceName, names.AttrEngine, "redis"),
+					resource.TestCheckResourceAttr(resourceName, names.AttrEngineVersion, "7.1"),
+					resource.TestCheckResourceAttr(resourceName, "multi_az_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "automatic_failover_enabled", acctest.CtFalse),
+					resource.TestCheckResourceAttr(resourceName, "num_cache_clusters", "2"),
+					resource.TestCheckResourceAttr(resourceName, "member_clusters.#", "2"),
+					resource.TestCheckResourceAttr(resourceName, "cluster_enabled", acctest.CtFalse),
 					resource.TestCheckResourceAttr(resourceName, "at_rest_encryption_enabled", acctest.CtFalse),
 					resource.TestCheckResourceAttr(resourceName, "transit_encryption_enabled", acctest.CtFalse),
 					resource.TestCheckResourceAttr(resourceName, "snapshot_retention_limit", "10"),
@@ -4837,28 +4837,6 @@ resource "aws_elasticache_replication_group" "test" {
 `, rName, engine)
 }
 
-func testAccReplicationGroupConfig_Valkey_durability(rName, durability string) string {
-	return fmt.Sprintf(`
-resource "aws_elasticache_replication_group" "test" {
-  replication_group_id       = %[1]q
-  description                = "test description"
-  node_type                  = "cache.r6g.large"
-  multi_az_enabled           = true
-  port                       = 6379
-  apply_immediately          = true
-  maintenance_window         = "tue:06:30-tue:07:30"
-  snapshot_window            = "01:00-02:00"
-  engine                     = "valkey"
-  engine_version             = "9.0"
-  cluster_mode               = "enabled"
-  num_node_groups            = 2
-  replicas_per_node_group    = 1
-  automatic_failover_enabled = true
-  durability                 = %[2]q
-}
-`, rName, durability)
-}
-
 func testAccReplicationGroupConfig_slowLog(rName string, engine string, engineVersion string) string {
 	return fmt.Sprintf(`
 resource "aws_cloudwatch_log_group" "test" {
@@ -4885,6 +4863,28 @@ resource "aws_elasticache_replication_group" "test" {
   }
 }
 `, rName, engine, engineVersion)
+}
+
+func testAccReplicationGroupConfig_Valkey_durability(rName, durability string) string {
+	return fmt.Sprintf(`
+resource "aws_elasticache_replication_group" "test" {
+  replication_group_id       = %[1]q
+  description                = "test description"
+  node_type                  = "cache.r6g.large"
+  multi_az_enabled           = true
+  port                       = 6379
+  apply_immediately          = true
+  maintenance_window         = "tue:06:30-tue:07:30"
+  snapshot_window            = "01:00-02:00"
+  engine                     = "valkey"
+  engine_version             = "9.0"
+  cluster_mode               = "enabled"
+  num_node_groups            = 2
+  replicas_per_node_group    = 1
+  automatic_failover_enabled = true
+  durability                 = %[2]q
+}
+`, rName, durability)
 }
 
 func testAccReplicationGroupConfig_clusterModeWithNumNodeGroups(rName string, engine string, engineVersion string, numNodeGroups int) string {

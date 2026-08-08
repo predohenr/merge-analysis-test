@@ -1710,13 +1710,6 @@ func suppressDiffIfBelongsToGlobalReplicationGroup(_ context.Context, diff *sche
 	return nil
 }
 
-func checkIfEngineSupportsSlowLog(engine, engineVersion *string) bool {
-	majorVersion, err := strconv.Atoi(string(aws.ToString(engineVersion)[0]))
-	return err == nil &&
-		((majorVersion >= 6 && aws.ToString(engine) == engineRedis) ||
-			(majorVersion >= 7 && aws.ToString(engine) == engineValkey))
-}
-
 func checkIfLogTypeSlowLog(currentLogDeliveryConfig []any) bool {
 	logTypeSlowLogExists := false
 
@@ -1728,6 +1721,18 @@ func checkIfLogTypeSlowLog(currentLogDeliveryConfig []any) bool {
 		}
 	}
 	return logTypeSlowLogExists
+}
+
+func suppressDiffIfBelongsToGlobalReplicationGroup(k, old, new string, d *schema.ResourceData) bool {
+	_, has_global_replication_group := d.GetOk("global_replication_group_id")
+	return has_global_replication_group && !d.IsNewResource()
+}
+
+func checkIfEngineSupportsSlowLog(engine, engineVersion *string) bool {
+	majorVersion, err := strconv.Atoi(string(aws.ToString(engineVersion)[0]))
+	return err == nil &&
+		((majorVersion >= 6 && aws.ToString(engine) == engineRedis) ||
+			(majorVersion >= 7 && aws.ToString(engine) == engineValkey))
 }
 
 func expandNodeGroupConfigurations(tfList []any) []awstypes.NodeGroupConfiguration {
