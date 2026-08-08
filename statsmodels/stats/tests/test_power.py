@@ -972,54 +972,33 @@ def test_solve_power_impossible_one_sided_raises():
     match = "No solution exists"
     with pytest.raises(ValueError, match=match):
         tt.solve_power(
-            effect_size=0.5,
-            nobs=None,
-            alpha=0.05,
-            power=0.8,
+            effect_size=0.5, nobs=None, alpha=0.05, power=0.8,
             alternative="smaller",
         )
     with pytest.raises(ValueError, match=match):
         tt.solve_power(
-            effect_size=-0.5,
-            nobs=None,
-            alpha=0.05,
-            power=0.8,
+            effect_size=-0.5, nobs=None, alpha=0.05, power=0.8,
             alternative="larger",
         )
     with pytest.raises(ValueError, match=match):
         ttind.solve_power(
-            effect_size=0.5,
-            nobs1=None,
-            alpha=0.05,
-            power=0.8,
-            ratio=1,
+            effect_size=0.5, nobs1=None, alpha=0.05, power=0.8, ratio=1,
             alternative="smaller",
         )
     with pytest.raises(ValueError, match=match):
         nip.solve_power(
-            effect_size=0.5,
-            nobs1=None,
-            alpha=0.05,
-            power=0.8,
-            ratio=1,
+            effect_size=0.5, nobs1=None, alpha=0.05, power=0.8, ratio=1,
             alternative="smaller",
         )
     with pytest.raises(ValueError, match=match):
         ttind.solve_power(
-            effect_size=0.5,
-            nobs1=10,
-            alpha=0.05,
-            power=0.8,
-            ratio=None,
+            effect_size=0.5, nobs1=10, alpha=0.05, power=0.8, ratio=None,
             alternative="smaller",
         )
 
     # matching signs still solve
     res = tt.solve_power(
-        effect_size=0.5,
-        nobs=None,
-        alpha=0.05,
-        power=0.8,
+        effect_size=0.5, nobs=None, alpha=0.05, power=0.8,
         alternative="larger",
     )
     assert_almost_equal(res, 26.1375, decimal=3)
