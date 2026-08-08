@@ -1140,6 +1140,55 @@ func (p *Planner) desiredPlan(controlPlane *rkev1.RKEControlPlane, tokensSecret 
 	return nodePlan, joinedTo, nil
 }
 
+func (p *Planner) generatePlanWithConfigFiles(controlPlane *rkev1.RKEControlPlane, tokensSecret plan.Secret, entry *planEntry, joinServer string, renderS3 bool) (plan.NodePlan, map[string]interface{}, string, error) {
+	var (
+		reg      registries
+		nodePlan plan.NodePlan
+		err      error
+	)
+
+	if !controlPlane.Spec.UnmanagedConfig {
+		nodePlan, reg, err = p.commonNodePlan(controlPlane, plan.NodePlan{})
+		if err != nil {
+			return nodePlan, map[string]interface{}{}, "", err
+		}
+		var (
+			joinedServer string
+			config       map[string]interface{}
+		)
+
+		nodePlan, config, joinedServer, err = p.addConfigFile(nodePlan, controlPlane, entry, tokensSecret, joinServer, reg, renderS3)
+		if err != nil {
+			return nodePlan, config, joinedServer, err
+		}
+
+		nodePlan, err = p.addManifests(nodePlan, controlPlane, entry)
+		if err != nil {
+			return nodePlan, config, joinedServer, err
+		}
+
+		nodePlan, err = p.addChartConfigs(nodePlan, controlPlane, entry)
+		if err != nil {
+			return nodePlan, config, joinedServer, err
+		}
+
+		nodePlan, err = addOtherFiles(nodePlan, controlPlane, entry)
+
+		idempotentScriptFile := plan.File{
+			Content: base64.StdEncoding.EncodeToString([]byte(idempotentActionScript)),
+			Path:    idempotentActionScriptPath(controlPlane),
+			Dynamic: true,
+			Minor:   true,
+		}
+
+		nodePlan.Files = append(nodePlan.Files, idempotentScriptFile)
+
+		return nodePlan, config, joinedServer, err
+	}
+
+	return plan.NodePlan{}, map[string]interface{}{}, "", nil
+}
+
 // getInstallerImage returns the correct system-agent-installer image for a given controlplane
 func (p *Planner) getInstallerImage(controlPlane *rkev1.RKEControlPlane) string {
 	runtime := capr.GetRuntime(controlPlane.Spec.KubernetesVersion)
