@@ -1864,31 +1864,6 @@ class BoxTest(jtu.JaxTestCase):
 
     f(Box(val1))
 
-  def test_qdd_vmap(self):
-    # https://github.com/jax-ml/jax/issues/34758
-    def f():
-      return Box(jnp.array(0)).get()
-    jax.vmap(f, axis_size=2)()  # don't crash
-
-  def test_jit_internal(self):
-    @jax.jit
-    def f(x):
-      box = new_box()  # TODO not Box
-      box.set(x)
-      box.set(box.get() + box.get())
-      return box.get()
-
-    f(1)
-
-  def test_jit_internal_box_constructor(self):
-    @jax.jit
-    def f(x):
-      box = Box(x)
-      box.set(box.get() + box.get())
-      return box.get()
-
-    f(1)
-
   @parameterized.parameters([False, True])
   def test_isinstance(self, jit):
     def f():
@@ -1897,119 +1872,6 @@ class BoxTest(jtu.JaxTestCase):
     if jit:
       f = jax.jit(f)
     f()
-
-  def test_jit_arg(self):
-    @jax.jit
-    def f(box, x):
-      assert tracing_ok
-      box.set(box.get() + x)
-
-    tracing_ok = True
-    box1 = Box(1.0)
-    f(box1, 1.)
-    self.assertAllClose(box1.get(), 2.0)
-
-    tracing_ok = False
-    box2 = Box(2.0)
-    f(box2, 2.)
-    self.assertAllClose(box2.get(), 4.0)
-
-  def test_jit_arg2(self):
-    # set without get
-
-    @jax.jit
-    def f(box, x):
-      box_set(box, x)
-
-    box = Box(0.0)
-    f(box, 1.)
-    self.assertAllClose(box_get(box), 1.0, check_dtypes=False)
-
-  def test_jit_arg_in_pytree(self):
-    @jax.jit
-    def f(dct, x):
-      assert tracing_ok
-      box = dct['box']
-      box.set(box.get() + x)
-
-    tracing_ok = True
-    box1 = Box(1.0)
-    f({'box': box1, 'a': 1.0}, 1.)
-    self.assertAllClose(box1.get(), 2.0)
-
-    tracing_ok = False
-    box2 = Box(2.0)
-    f({'box': box2, 'a': 2.0}, 2.)
-    self.assertAllClose(box2.get(), 4.0)
-
-    tracing_ok = True
-    box3 = Box(3)  # int, dtype changed
-    f({'box': box3, 'a': 2.0}, 2.)
-    self.assertAllClose(box3.get(), 5.0)
-
-  def test_jit_closure(self):
-    box = Box(1.0)
-
-    @jax.jit
-    def f(x):
-      assert tracing_ok
-      box.set(box.get() + x)
-
-    tracing_ok = True
-    f(2.0)
-    self.assertAllClose(box.get(), 3.0)
-    tracing_ok = False
-    f(5.0)
-    self.assertAllClose(box.get(), 8.0)
-
-  def test_jit_closure_nested(self):
-    box = Box(5.0)
-
-    @jax.jit
-    def f(x):
-      box.set(box.get() + x)
-
-    @jax.jit
-    def g(x):
-      f(x)
-
-    g(3.0)
-    self.assertAllClose(box.get(), 8.0)
-
-  def test_jit_closure_nested2(self):
-    @jax.jit
-    def h(x):
-      box = new_box()
-      box.set(x)
-
-      @jax.jit
-      def k(x):
-        box.set(box.get() + x)
-
-      k(1.0)
-      k(1.0)
-      return box.get()
-
-    ans = h(2.0)
-    self.assertAllClose(ans, 4.0)
-
-  def test_jit_closure_nested3(self):
-    box = new_box()
-
-    @jax.jit
-    def h(x):
-      box.set(x)
-
-      @jax.jit
-      def k(x):
-        box.set(box.get() + x)
-
-      k(1.0)
-      k(1.0)
-      return box.get()
-
-    ans = h(2.0)
-    self.assertAllClose(ans, 4.0)
 
   @parameterized.parameters([False, True])
   def test_jvp_closure_stop_gradient(self, jit):
@@ -2124,26 +1986,6 @@ class BoxTest(jtu.JaxTestCase):
     f(box, 1.0)
     self.assertAllClose(box.get(), 2.0)
 
-  def test_custom_vjp_is_high_propagation_jaxpr(self):
-    @jax.custom_vjp
-    def foo(x):
-      box = immutbox_new(x)
-      return immutbox_get(box)
-
-    def foo_fwd(x):
-      return foo(x), None
-
-    def foo_bwd(_, g):
-      return g,
-
-    foo.defvjp(foo_fwd, foo_bwd)
-
-    def f(x):
-      return foo(x)
-
-    jaxpr = jax.make_jaxpr(f)(2.0)
-    self.assertTrue(jaxpr.jaxpr.is_high)
-
   @parameterized.parameters([False, True])
   def test_grad_closure_stop_gradient(self, jit):
     box = Box(0.0)
@@ -2176,6 +2018,184 @@ class BoxTest(jtu.JaxTestCase):
     double_it_10()
 
     self.assertAllClose(box.get(), 1024., check_dtypes=False)
+
+  @parameterized.parameters([False, True])
+  def test_while_loop(self, jit):
+    box = Box(1.)
+
+    def f():
+      zero = jnp.zeros((), 'int32')
+
+      def cond_fun(i):
+        return i + zero < 5
+      def body_fun(i):
+        box.set(box.get() * 2.)
+        return i + 1
+      _ = jax.lax.while_loop(cond_fun, body_fun, 0)
+
+    if jit:
+      f = jax.jit(f)
+
+    f()
+    self.assertAllClose(box.get(), 32, check_dtypes=False)
+
+  def test_qdd_vmap(self):
+    # https://github.com/jax-ml/jax/issues/34758
+    def f():
+      return Box(jnp.array(0)).get()
+    jax.vmap(f, axis_size=2)()  # don't crash
+
+  def test_jit_internal(self):
+    @jax.jit
+    def f(x):
+      box = new_box()  # TODO not Box
+      box.set(x)
+      box.set(box.get() + box.get())
+      return box.get()
+
+    f(1)
+
+  def test_jit_internal_box_constructor(self):
+    @jax.jit
+    def f(x):
+      box = Box(x)
+      box.set(box.get() + box.get())
+      return box.get()
+
+    f(1)
+
+  def test_jit_arg(self):
+    @jax.jit
+    def f(box, x):
+      assert tracing_ok
+      box.set(box.get() + x)
+
+    tracing_ok = True
+    box1 = Box(1.0)
+    f(box1, 1.)
+    self.assertAllClose(box1.get(), 2.0)
+
+    tracing_ok = False
+    box2 = Box(2.0)
+    f(box2, 2.)
+    self.assertAllClose(box2.get(), 4.0)
+
+  def test_jit_arg2(self):
+    # set without get
+
+    @jax.jit
+    def f(box, x):
+      box_set(box, x)
+
+    box = Box(0.0)
+    f(box, 1.)
+    self.assertAllClose(box_get(box), 1.0, check_dtypes=False)
+
+  def test_jit_arg_in_pytree(self):
+    @jax.jit
+    def f(dct, x):
+      assert tracing_ok
+      box = dct['box']
+      box.set(box.get() + x)
+
+    tracing_ok = True
+    box1 = Box(1.0)
+    f({'box': box1, 'a': 1.0}, 1.)
+    self.assertAllClose(box1.get(), 2.0)
+
+    tracing_ok = False
+    box2 = Box(2.0)
+    f({'box': box2, 'a': 2.0}, 2.)
+    self.assertAllClose(box2.get(), 4.0)
+
+    tracing_ok = True
+    box3 = Box(3)  # int, dtype changed
+    f({'box': box3, 'a': 2.0}, 2.)
+    self.assertAllClose(box3.get(), 5.0)
+
+  def test_jit_closure(self):
+    box = Box(1.0)
+
+    @jax.jit
+    def f(x):
+      assert tracing_ok
+      box.set(box.get() + x)
+
+    tracing_ok = True
+    f(2.0)
+    self.assertAllClose(box.get(), 3.0)
+    tracing_ok = False
+    f(5.0)
+    self.assertAllClose(box.get(), 8.0)
+
+  def test_jit_closure_nested(self):
+    box = Box(5.0)
+
+    @jax.jit
+    def f(x):
+      box.set(box.get() + x)
+
+    @jax.jit
+    def g(x):
+      f(x)
+
+    g(3.0)
+    self.assertAllClose(box.get(), 8.0)
+
+  def test_jit_closure_nested2(self):
+    @jax.jit
+    def h(x):
+      box = new_box()
+      box.set(x)
+
+      @jax.jit
+      def k(x):
+        box.set(box.get() + x)
+
+      k(1.0)
+      k(1.0)
+      return box.get()
+
+    ans = h(2.0)
+    self.assertAllClose(ans, 4.0)
+
+  def test_jit_closure_nested3(self):
+    box = new_box()
+
+    @jax.jit
+    def h(x):
+      box.set(x)
+
+      @jax.jit
+      def k(x):
+        box.set(box.get() + x)
+
+      k(1.0)
+      k(1.0)
+      return box.get()
+
+    ans = h(2.0)
+    self.assertAllClose(ans, 4.0)
+
+  def test_custom_vjp_is_high_propagation_jaxpr(self):
+    @jax.custom_vjp
+    def foo(x):
+      box = immutbox_new(x)
+      return immutbox_get(box)
+
+    def foo_fwd(x):
+      return foo(x), None
+
+    def foo_bwd(_, g):
+      return g,
+
+    foo.defvjp(foo_fwd, foo_bwd)
+
+    def f(x):
+      return foo(x)
+
+    jaxpr = jax.make_jaxpr(f)(2.0)
+    self.assertTrue(jaxpr.jaxpr.is_high)
 
   def test_cond_box_internally_pure(self):
     @jax.jit
@@ -2370,26 +2390,6 @@ class BoxTest(jtu.JaxTestCase):
     self.assertEqual(box.get(), dict(a=5, b=3))
     self.assertEqual(box2.get(), 3)
 
-  @parameterized.parameters([False, True])
-  def test_while_loop(self, jit):
-    box = Box(1.)
-
-    def f():
-      zero = jnp.zeros((), 'int32')
-
-      def cond_fun(i):
-        return i + zero < 5
-      def body_fun(i):
-        box.set(box.get() * 2.)
-        return i + 1
-      _ = jax.lax.while_loop(cond_fun, body_fun, 0)
-
-    if jit:
-      f = jax.jit(f)
-
-    f()
-    self.assertAllClose(box.get(), 32, check_dtypes=False)
-
   def test_while_loop_typechange_error(self):
     box = Box([1.])
     def cond_fun(i):
@@ -2534,6 +2534,28 @@ class HijaxTransformCoverageTest(jtu.JaxTestCase):
 
     jax.grad(loss_fn)(box)
     # NOTE: unclear what the tangent type will be here
+  @absltest.skip("has_qdd not yet supported for Box in scan carry")
+  def test_mutable_hitypes_as_scan_carry(self):
+    box = Box(jnp.array(1.0))
+
+    def body(box, _):
+      box.set(box.get() * 2)
+      return box, None
+
+    box, _ = jax.lax.scan(body, box, None, length=5)
+    self.assertAllClose(box.get(), 32.0, check_dtypes=False)
+  @absltest.skip("Box doesn't have shape attribute needed for scan extensive")
+  def test_mutable_hitypes_as_scan_extensive(self):
+    boxes = [Box(jnp.float32(i)) for i in range(5)]
+
+    def body(_, box_i):
+      val = box_i.get()
+      box_i.set(val * 2)
+      return None, box_i
+
+    _, boxes_out = jax.lax.scan(body, None, boxes)
+    for i, box in enumerate(boxes_out):
+      self.assertAllClose(box.get(), i * 2, check_dtypes=False)
 
   # with non-differentiable mutable hijax arguments
   def test_mutable_hitypes_as_nondiff_grad_args(self):
@@ -2594,30 +2616,8 @@ class HijaxTransformCoverageTest(jtu.JaxTestCase):
     self.assertAllClose(ys, 3.0 * xs + 4.0, check_dtypes=False)
 
   # with mutable hijax carry arguments
-  @absltest.skip("has_qdd not yet supported for Box in scan carry")
-  def test_mutable_hitypes_as_scan_carry(self):
-    box = Box(jnp.array(1.0))
-
-    def body(box, _):
-      box.set(box.get() * 2)
-      return box, None
-
-    box, _ = jax.lax.scan(body, box, None, length=5)
-    self.assertAllClose(box.get(), 32.0, check_dtypes=False)
 
   # with mutable hijax extensive arguments
-  @absltest.skip("Box doesn't have shape attribute needed for scan extensive")
-  def test_mutable_hitypes_as_scan_extensive(self):
-    boxes = [Box(jnp.float32(i)) for i in range(5)]
-
-    def body(_, box_i):
-      val = box_i.get()
-      box_i.set(val * 2)
-      return None, box_i
-
-    _, boxes_out = jax.lax.scan(body, None, boxes)
-    for i, box in enumerate(boxes_out):
-      self.assertAllClose(box.get(), i * 2, check_dtypes=False)
 
   # with mutable hijax captured arguments
   def test_mutable_hitypes_as_scan_captured(self):
