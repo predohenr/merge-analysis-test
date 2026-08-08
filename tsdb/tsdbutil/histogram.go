@@ -57,17 +57,6 @@ func GenerateTestHistogram(i int64) *histogram.Histogram {
 	}
 }
 
-func GenerateTestCustomBucketsHistograms(n int) (r []*histogram.Histogram) {
-	for i := 0; i < n; i++ {
-		h := GenerateTestCustomBucketsHistogram(int64(i))
-		if i > 0 {
-			h.CounterResetHint = histogram.NotCounterReset
-		}
-		r = append(r, h)
-	}
-	return r
-}
-
 func GenerateTestCustomBucketsHistogram(i int64) *histogram.Histogram {
 	return &histogram.Histogram{
 		Count:  5 + uint64(i*4),
@@ -80,6 +69,31 @@ func GenerateTestCustomBucketsHistogram(i int64) *histogram.Histogram {
 		PositiveBuckets: []int64{i + 1, 1, -1, 0},
 		CustomValues:    []float64{0, 1, 2, 3, 4},
 	}
+}
+
+func GenerateTestCustomBucketsHistogram(i int) *histogram.Histogram {
+	return &histogram.Histogram{
+		Count:  5 + uint64(i*4),
+		Sum:    18.4 * float64(i+1),
+		Schema: histogram.CustomBucketsSchema,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{i + 1, 1, -1, 0},
+		CustomValues:    []float64{0, 1, 2, 3, 4},
+	}
+}
+
+func GenerateTestCustomBucketsHistograms(n int) (r []*histogram.Histogram) {
+	for i := 0; i < n; i++ {
+		h := GenerateTestCustomBucketsHistogram(i)
+		if i > 0 {
+			h.CounterResetHint = histogram.NotCounterReset
+		}
+		r = append(r, h)
+	}
+	return r
 }
 
 func GenerateTestGaugeHistograms(n int) (r []*histogram.Histogram) {
@@ -130,7 +144,7 @@ func GenerateTestFloatHistogram(i int64) *histogram.FloatHistogram {
 
 func GenerateTestCustomBucketsFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 	for i := 0; i < n; i++ {
-		h := GenerateTestCustomBucketsFloatHistogram(int64(i))
+		h := GenerateTestCustomBucketsFloatHistogram(i)
 		if i > 0 {
 			h.CounterResetHint = histogram.NotCounterReset
 		}
