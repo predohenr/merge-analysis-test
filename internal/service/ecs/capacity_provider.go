@@ -1179,6 +1179,41 @@ func expandCapacityReservationRequest(tfList []any) *awstypes.CapacityReservatio
 	return apiObject
 }
 
+func expandInstanceLaunchTemplateUpdate(tfList []any) *awstypes.InstanceLaunchTemplateUpdate {
+	if len(tfList) == 0 || tfList[0] == nil {
+		return nil
+	}
+
+	tfMap := tfList[0].(map[string]any)
+	apiObject := &awstypes.InstanceLaunchTemplateUpdate{}
+
+	if v, ok := tfMap["capacity_reservations"].([]any); ok && len(v) > 0 {
+		apiObject.CapacityReservations = expandCapacityReservationRequest(v)
+	}
+
+	if v, ok := tfMap["ec2_instance_profile_arn"].(string); ok && v != "" {
+		apiObject.Ec2InstanceProfileArn = aws.String(v)
+	}
+
+	if v, ok := tfMap["instance_requirements"].([]any); ok && len(v) > 0 {
+		apiObject.InstanceRequirements = expandInstanceRequirementsRequest(v)
+	}
+
+	if v, ok := tfMap["monitoring"].(string); ok && v != "" {
+		apiObject.Monitoring = awstypes.ManagedInstancesMonitoringOptions(v)
+	}
+
+	if v, ok := tfMap[names.AttrNetworkConfiguration].([]any); ok && len(v) > 0 {
+		apiObject.NetworkConfiguration = expandManagedInstancesNetworkConfiguration(v)
+	}
+
+	if v, ok := tfMap["storage_configuration"].([]any); ok && len(v) > 0 {
+		apiObject.StorageConfiguration = expandManagedInstancesStorageConfiguration(v)
+	}
+
+	return apiObject
+}
+
 func expandManagedInstancesNetworkConfiguration(tfList []any) *awstypes.ManagedInstancesNetworkConfiguration {
 	if len(tfList) == 0 || tfList[0] == nil {
 		return nil
