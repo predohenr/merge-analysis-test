@@ -24,8 +24,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from optuna._gp.qmc import sample_from_normal_sobol
 from optuna._gp.thread_limiting import limit_threads_in_optimization
+from optuna._gp.scipy_blas_thread_patch import single_blas_thread_if_scipy_v1_15_or_newer
+from optuna._gp.qmc import sample_from_normal_sobol
 from optuna._warnings import optuna_warn
 from optuna.logging import get_logger
 
