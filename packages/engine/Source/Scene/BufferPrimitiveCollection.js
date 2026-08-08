@@ -764,15 +764,6 @@ class BufferPrimitiveCollection {
   }
 
   /**
-   * The component datatype used to store position values.
-   * @type {ComponentDatatype}
-   * @readonly
-   */
-  get positionDatatype() {
-    return this._positionDatatype;
-  }
-
-  /**
    * When <code>true</code>, integer position values are treated as normalized
    * values, where the full integer range maps to [-1, 1] (signed) or [0, 1]
    * (unsigned).
@@ -781,6 +772,14 @@ class BufferPrimitiveCollection {
    */
   get positionNormalized() {
     return this._positionNormalized;
+  }
+  /**
+   * The component datatype used to store position values.
+   * @type {ComponentDatatype}
+   * @readonly
+   */
+  get positionDatatype() {
+    return this._positionDatatype;
   }
 
   /////////////////////////////////////////////////////////////////////////////
