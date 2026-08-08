@@ -942,18 +942,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	lfOpts.Command = "boot" // Revert command to "boot".
 
-	sentryBin := &gvisorbinaries.GvisorSentry
-	sentryUsesCgo := false
-	if conf.Network == config.NetworkPlugin {
-		sentryBin = &gvisorbinaries.GvisorSentryPluginStack
-		sentryUsesCgo = true
-	}
 	bootBinPath := specutils.ExePath
-	if p, err := sentryBin.Path(); err == nil {
-		log.Infof("Sidecar %q found: booting sandbox with %s", sentryBin.Name, p)
+	if p, err := gvisorbinaries.GvisorSentry.Path(); err == nil {
+		log.Infof("Sidecar %q found: booting sandbox with %s", gvisorbinaries.GvisorSentry.Name, p)
 		bootBinPath = p
 	} else {
-		log.Warningf("Sidecar %q not usable (%v): booting sandbox with runsc itself", sentryBin.Name, err)
+		log.Infof("Sidecar %q not usable (%v): booting sandbox with runsc itself", gvisorbinaries.GvisorSentry.Name, err)
 	}
 
 	// Relay all the config flags to the sandbox process.
@@ -987,7 +981,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if bootBinPath != specutils.ExePath {
 		cmd.Env = gvisorbinaries.WithEnforceRelease(cmd.Env)
 	}
-	if sentryUsesCgo {
+	if config.CgoEnabled {
 		// Platforms that use stub processes are not compatible with
 		// the glibc rseq, because they unmap everything from a process
 		// address space.
