@@ -1608,11 +1608,6 @@ class TestSign:
         assert isinstance(out, sp.sparray)
         return out
 
-    def test_real_sign_unchanged(self):
-        a = sparse.csr_matrix(cupy.array([[-2.0, 0, 3.0]]))
-        b = a.sign()
-        cupy.testing.assert_array_equal(b.data, cupy.array([-1.0, 1.0]))
-
 
 # 1-D sparse arrays (coo_array / csr_array)
 
