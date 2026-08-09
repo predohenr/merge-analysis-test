@@ -74,14 +74,6 @@ public class TestJsonFormatter {
         }
     }
 
-    public void testEscapeLatterHalf() {
-        String input = "0123456789";
-
-        CharSequence result = JsonFormatter.JSONFilter.escape(input, 5, 5);
-
-        Assert.assertEquals("56789", result.toString());
-    }
-
     @Test
     public void testEscapeBeginningOfLimitedRange() {
         String input = "01234\"6789";
@@ -89,5 +81,14 @@ public class TestJsonFormatter {
         CharSequence result = JsonFormatter.JSONFilter.escape(input, 5, 5);
 
         Assert.assertEquals("\\\"6789", result.toString());
+    }
+
+    @Test
+    public void testEscapeLatterHalf() {
+        String input = "0123456789";
+
+        CharSequence result = JsonFormatter.JSONFilter.escape(input, 5, 5);
+
+        Assert.assertEquals("56789", result.toString());
     }
 }
