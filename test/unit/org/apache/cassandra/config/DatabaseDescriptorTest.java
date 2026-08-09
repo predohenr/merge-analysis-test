@@ -75,6 +75,25 @@ public class DatabaseDescriptorTest
         DatabaseDescriptor.daemonInitialization();
     }
 
+    @Test
+    public void testCreateEndpointSnitchWrongTypeRejectedWithoutInitializing()
+    {
+        ClassLoadingTestSupport.assertNotInitialized(ClassLoadingTestNonAssignable.class);
+
+        assertThatThrownBy(() -> DatabaseDescriptor.createEndpointSnitch(ClassLoadingTestNonAssignable.class.getName()))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("must extend or implement " + IEndpointSnitch.class.getName());
+
+        assertThat(ClassLoadingTestSupport.wasInitialized(ClassLoadingTestNonAssignable.class)).isFalse();
+    }
+
+    @Test
+    public void testCreateEndpointSnitchValidClassResolves()
+    {
+        IEndpointSnitch snitch = DatabaseDescriptor.createEndpointSnitch("SimpleSnitch");
+        assertThat(snitch).isNotNull();
+    }
+
     // this came as a result of CASSANDRA-995
     @Test
     public void testConfigurationLoader() throws Exception
@@ -134,25 +153,6 @@ public class DatabaseDescriptorTest
                 return;
             }
         }
-    }
-
-    @Test
-    public void testCreateEndpointSnitchWrongTypeRejectedWithoutInitializing()
-    {
-        ClassLoadingTestSupport.assertNotInitialized(ClassLoadingTestNonAssignable.class);
-
-        assertThatThrownBy(() -> DatabaseDescriptor.createEndpointSnitch(ClassLoadingTestNonAssignable.class.getName()))
-        .isInstanceOf(ConfigurationException.class)
-        .hasMessageContaining("must extend or implement " + IEndpointSnitch.class.getName());
-
-        assertThat(ClassLoadingTestSupport.wasInitialized(ClassLoadingTestNonAssignable.class)).isFalse();
-    }
-
-    @Test
-    public void testCreateEndpointSnitchValidClassResolves()
-    {
-        IEndpointSnitch snitch = DatabaseDescriptor.createEndpointSnitch("SimpleSnitch");
-        assertThat(snitch).isNotNull();
     }
 
     @Test
