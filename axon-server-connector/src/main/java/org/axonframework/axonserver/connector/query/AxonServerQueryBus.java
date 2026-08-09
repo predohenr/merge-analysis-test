@@ -203,27 +203,27 @@ public class AxonServerQueryBus implements QueryBus, Distributed<QueryBus> {
                     priority,
                     TASK_SEQUENCE));
             return Mono.fromSupplier(this::registerStreamingQueryActivity)
-                .flatMapMany(activity ->
+                       .flatMapMany(activity ->
                     FluxUtils.of(
-                        new DefaultMessageDispatchInterceptorChain<>(dispatchInterceptors)
-                            .proceed(queryWithContext, null)
-                            .first()
-                            .<QueryMessage>cast()
+                                            new DefaultMessageDispatchInterceptorChain<>(dispatchInterceptors)
+                                                    .proceed(queryWithContext, null)
+                                                    .first()
+                                                    .<QueryMessage>cast()
                     )
                     .singleOrEmpty()
-                    .map(MessageStream.Entry::message)
-                    .flatMapMany(intercepted -> {
-                        if (shouldRunQueryLocally(intercepted.type().name())) {
-                            return localSegment.streamingQuery(intercepted, context);
-                        }
-                        return Mono.just(serializeStreaming(intercepted, priority))
+                                                    .map(MessageStream.Entry::message)
+                                                    .flatMapMany(intercepted -> {
+                                                                     if (shouldRunQueryLocally(intercepted.type().name())) {
+                                                                         return localSegment.streamingQuery(intercepted, context);
+                                                                     }
+                                                                     return Mono.just(serializeStreaming(intercepted, priority))
                             .flatMapMany(queryRequest -> new ResultStreamPublisher<>(() -> sendRequest(intercepted, queryRequest)))
                             .concatMap(queryResponse -> deserialize(intercepted, queryResponse));
-                        }
-                    )
-                    .publishOn(scheduler.get())
-                    .doOnError(span::recordException)
-                    .doFinally(new ActivityFinisher(activity, span))
+                                                                 }
+                                                    )
+                                                    .publishOn(scheduler.get())
+                                                    .doOnError(span::recordException)
+                                                    .doFinally(new ActivityFinisher(activity, span))
                     .subscribeOn(scheduler.get())
                 );
         }
@@ -268,13 +268,13 @@ public class AxonServerQueryBus implements QueryBus, Distributed<QueryBus> {
             QueryMessage interceptedQuery = FluxUtils
                 .of(
                     new DefaultMessageDispatchInterceptorChain<>(dispatchInterceptors)
-                        .proceed(queryWithContext, null)
-                        .first()
-                        .<QueryMessage>cast()
+                    .proceed(queryWithContext, null)
+                    .first()
+                    .<QueryMessage>cast()
                 )
                 .singleOrEmpty()
-                .map(MessageStream.Entry::message)
-                .block(); // TODO reintegrate as part of #3079
+                    .map(MessageStream.Entry::message)
+                    .block(); // TODO reintegrate as part of #3079
             //noinspection resource
             ShutdownLatch.ActivityHandle queryInTransit = shutdownLatch.registerActivity();
             CompletableFuture<QueryResponseMessage> queryTransaction = new CompletableFuture<>();
@@ -443,8 +443,8 @@ public class AxonServerQueryBus implements QueryBus, Distributed<QueryBus> {
                     .<SubscriptionQueryMessage>cast()
                 )
                 .singleOrEmpty()
-                .map(MessageStream.Entry::message)
-                .block(); // TODO reintegrate as part of #3079
+                    .map(MessageStream.Entry::message)
+                    .block(); // TODO reintegrate as part of #3079
             String subscriptionId = interceptedQuery.identifier();
             String targetContext = targetContextResolver.resolveContext(interceptedQuery);
 
