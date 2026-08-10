@@ -57,20 +57,11 @@ import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import javax.rmi.ssl.SslRMIClientSocketFactory;
 
-import com.google.common.base.Function;
-import com.google.common.base.Strings;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
-import com.google.common.collect.Sets;
-import com.google.common.util.concurrent.Uninterruptibles;
-
 import org.apache.cassandra.audit.AuditLogManager;
 import org.apache.cassandra.audit.AuditLogManagerMBean;
 import org.apache.cassandra.audit.AuditLogOptions;
 import org.apache.cassandra.audit.AuditLogOptionsCompositeData;
+import com.google.common.collect.ImmutableMap;
 import org.apache.cassandra.auth.AuthCache;
 import org.apache.cassandra.auth.AuthCacheMBean;
 import org.apache.cassandra.auth.CIDRGroupsMappingManager;
@@ -93,10 +84,10 @@ import org.apache.cassandra.db.compaction.CompactionManagerMBean;
 import org.apache.cassandra.db.compression.CompressionDictionaryDetailsTabularData;
 import org.apache.cassandra.db.compression.CompressionDictionaryManagerMBean;
 import org.apache.cassandra.db.compression.TrainingState;
-import org.apache.cassandra.db.guardrails.Guardrails;
-import org.apache.cassandra.db.guardrails.GuardrailsMBean;
 import org.apache.cassandra.db.virtual.CIDRFilteringMetricsTable;
 import org.apache.cassandra.db.virtual.CIDRFilteringMetricsTableMBean;
+import org.apache.cassandra.db.guardrails.Guardrails;
+import org.apache.cassandra.db.guardrails.GuardrailsMBean;
 import org.apache.cassandra.fql.FullQueryLoggerOptions;
 import org.apache.cassandra.fql.FullQueryLoggerOptionsCompositeData;
 import org.apache.cassandra.gms.FailureDetector;
@@ -139,6 +130,15 @@ import org.apache.cassandra.streaming.management.StreamStateCompositeData;
 import org.apache.cassandra.tcm.CMSOperations;
 import org.apache.cassandra.tcm.CMSOperationsMBean;
 import org.apache.cassandra.tools.RepairRunner.RepairCmd;
+
+import com.google.common.base.Function;
+import com.google.common.base.Strings;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.cassandra.tools.nodetool.GetTimeout;
 import org.apache.cassandra.utils.NativeLibrary;
 
@@ -551,9 +551,9 @@ public class NodeProbe implements AutoCloseable
         {
             @Override
             public Integer start()
-            {
+        {
                 return ssProxy.repairAsync(keyspace, options);
-            }
+        }
         }));
     }
 
@@ -1021,7 +1021,7 @@ public class NodeProbe implements AutoCloseable
      */
     /** @deprecated See CASSANDRA-18111 */
     @Deprecated(since = "5.1")
-    public Map<String, TabularData> getSnapshotDetails(Map<String, String> options)
+public Map<String, TabularData> getSnapshotDetails(Map<String, String> options)
     {
         return snapshotProxy.listSnapshots(options);
     }
@@ -2144,7 +2144,7 @@ public class NodeProbe implements AutoCloseable
                     }
                     else
                     {
-                        return JMX.newMBeanProxy(mbeanServerConn, oName, CassandraMetricsRegistry.JmxCounterMBean.class).getCount();
+                    return JMX.newMBeanProxy(mbeanServerConn, oName, CassandraMetricsRegistry.JmxCounterMBean.class).getCount();
                     }
                 }
                 case "CoordinatorReadLatency":

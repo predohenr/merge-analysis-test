@@ -298,7 +298,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      * @deprecated See CASSANDRA-18111
      */
     @Deprecated(since = "5.1")
-    public void takeSnapshot(String tag, Map<String, String> options, String... entities) throws IOException;
+public void takeSnapshot(String tag, Map<String, String> options, String... entities) throws IOException;
 
     /**
      * Remove the snapshot with the given name from the given keyspaces.
@@ -321,7 +321,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      * @deprecated See CASSANDRA-18111
      */
     @Deprecated(since = "5.1")
-    public void clearSnapshot(Map<String, Object> options, String tag, String... keyspaceNames) throws IOException;
+public void clearSnapshot(Map<String, Object> options, String tag, String... keyspaceNames) throws IOException;
 
     /**
      * Get the details of all the snapshot
@@ -339,7 +339,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      * @deprecated See CASSANDRA-18111
      */
     @Deprecated(since = "5.1")
-    public Map<String, TabularData> getSnapshotDetails(Map<String, String> options);
+public Map<String, TabularData> getSnapshotDetails(Map<String, String> options);
 
     /**
      * Get the true size taken by all snapshots across all keyspaces.
@@ -347,7 +347,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      * @deprecated See CASSANDRA-18111
      */
     @Deprecated(since = "5.1")
-    public long trueSnapshotsSize();
+public long trueSnapshotsSize();
 
     /**
      * Set the current hardlink-per-second throttle for snapshots
@@ -357,7 +357,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      * @deprecated See CASSANDRA-18111
      */
     @Deprecated(since = "5.1")
-    public void setSnapshotLinksPerSecond(long throttle);
+public void setSnapshotLinksPerSecond(long throttle);
 
     /**
      * Get the current hardlink-per-second throttle for snapshots
@@ -367,7 +367,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      * @deprecated See CASSANDRA-18111
      */
     @Deprecated(since = "5.1")
-    public long getSnapshotLinksPerSecond();
+public long getSnapshotLinksPerSecond();
 
     /**
      * Forces refresh of values stored in system.size_estimates of all column families.
@@ -678,7 +678,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      * @deprecated See CASSANDRA-19488
      */
     @Deprecated(since = "5.1")
-    public void updateSnitch(String epSnitchClassName, Boolean dynamic, Integer dynamicUpdateInterval, Integer dynamicResetInterval, Double dynamicBadnessThreshold) throws ClassNotFoundException;
+public void updateSnitch(String epSnitchClassName, Boolean dynamic, Integer dynamicUpdateInterval, Integer dynamicResetInterval, Double dynamicBadnessThreshold) throws ClassNotFoundException;
 
     /**
      * Change NodeProximity class and dynamic-ness (and dynamic attributes) at runtime.
@@ -1263,7 +1263,7 @@ public interface StorageServiceMBean extends NotificationEmitter
     @Deprecated(since = "4.0")
     public Map<String, Set<InetAddress>> getOutstandingSchemaVersions();
     @Deprecated(since = "CEP-21")
-    public Map<String, Set<String>> getOutstandingSchemaVersionsWithPort();
+public Map<String, Set<String>> getOutstandingSchemaVersionsWithPort();
 
     // see CASSANDRA-3200
     public boolean autoOptimiseIncRepairStreams();
