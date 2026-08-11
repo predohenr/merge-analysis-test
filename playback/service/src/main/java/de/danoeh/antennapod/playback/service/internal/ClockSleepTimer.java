@@ -153,4 +153,10 @@ public class ClockSleepTimer implements SleepTimer {
     public void episodeFinishedPlayback() {
         //no-op
     }
+
+    @Override
+    public void reset() {
+        EventBus.getDefault().post(SleepTimerUpdatedEvent.cancelled());
+        updateRemainingTime(initialWaitingTime);
+    }
 }
