@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
 // [core#1047]: Add max-name-length constraints
+
+// [core#1047]: Add max-name-length constraints
 class LargeDocReadTest extends AsyncTestBase
 {
     private final JsonFactory JSON_F_DEFAULT = newStreamFactory();
@@ -107,6 +109,20 @@ class LargeDocReadTest extends AsyncTestBase
         // then with byte buffer
         try (AsyncReaderWrapper p = asyncForByteBuffer(JSON_F_DOC_10K, 1000, doc, 1)) {
             consumeAsync(p);
+            fail("expected StreamConstraintsException");
+        } catch (StreamConstraintsException e) {
+            verifyMaxDocLen(JSON_F_DOC_10K, e);
+        }
+    }
+
+    // [core#1575] DataInput with maxDocumentLength should enforce the limit
+    @Test
+    void dataInputWithDocLengthLimitEnforced() throws Exception
+    {
+        final String doc = generateJSON(12_000);
+        try (JsonParser p = JSON_F_DOC_10K.createParser(ObjectReadContext.empty(),
+                new MockDataInput(doc))) {
+            consumeTokens(p);
             fail("expected StreamConstraintsException");
         } catch (StreamConstraintsException e) {
             verifyMaxDocLen(JSON_F_DOC_10K, e);
@@ -244,20 +260,6 @@ class LargeDocReadTest extends AsyncTestBase
             } catch (StreamConstraintsException e) {
                 verifyException(e, "Document length (10001)");
             }
-        }
-    }
-
-    // [core#1575] DataInput with maxDocumentLength should enforce the limit
-    @Test
-    void dataInputWithDocLengthLimitEnforced() throws Exception
-    {
-        final String doc = generateJSON(12_000);
-        try (JsonParser p = JSON_F_DOC_10K.createParser(ObjectReadContext.empty(),
-                new MockDataInput(doc))) {
-            consumeTokens(p);
-            fail("expected StreamConstraintsException");
-        } catch (StreamConstraintsException e) {
-            verifyMaxDocLen(JSON_F_DOC_10K, e);
         }
     }
 
