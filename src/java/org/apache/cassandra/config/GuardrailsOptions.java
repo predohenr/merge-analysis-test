@@ -997,13 +997,13 @@ public class GuardrailsOptions implements GuardrailsConfig
     }
 
     @Override
-    public boolean getDataDiskUsageKeyspaceWideProtectionEnabled()
+public boolean getDataDiskUsageKeyspaceWideProtectionEnabled()
     {
         return config.data_disk_usage_keyspace_wide_protection_enabled;
     }
 
     @Override
-    public void setDataDiskUsageKeyspaceWideProtectionEnabled(boolean enabled)
+public void setDataDiskUsageKeyspaceWideProtectionEnabled(boolean enabled)
     {
         updatePropertyWithLogging("data_disk_usage_keyspace_wide_protection_enabled",
                                   enabled,
