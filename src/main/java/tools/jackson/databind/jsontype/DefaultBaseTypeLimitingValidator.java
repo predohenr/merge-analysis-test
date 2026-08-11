@@ -29,7 +29,7 @@ public class DefaultBaseTypeLimitingValidator
     implements java.io.Serializable
 {
     @Serial
-    private static final long serialVersionUID = 1L;
+private static final long serialVersionUID = 1L;
 
     @Override
     public Validity validateBaseType(DatabindContext ctxt, JavaType baseType)
