@@ -682,17 +682,19 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
         return list;
     }
 
-    /**
-     * WARNING: we index from 1 here, for consistency with inet address!
-     */
-    public I get(int node)
-    {
-        return instances.get(node - 1);
-    }
-
     public I get(InetSocketAddress addr)
     {
         return instanceMap.get(addr);
+    }
+
+    public List<I> get(int... nodes)
+    {
+        if (nodes == null || nodes.length == 0)
+            throw new IllegalArgumentException("No nodes provided");
+        List<I> list = new ArrayList<>(nodes.length);
+        for (int i : nodes)
+            list.add(get(i));
+        return list;
     }
 
     public I getFirstRunningInstance()

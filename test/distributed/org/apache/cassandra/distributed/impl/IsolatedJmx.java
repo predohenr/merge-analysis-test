@@ -35,8 +35,8 @@ import com.google.common.util.concurrent.Uninterruptibles;
 
 import org.apache.cassandra.distributed.shared.jmx.CollectingRMIServerSocketFactoryImpl;
 import org.apache.cassandra.distributed.shared.jmx.RMIClientSocketFactoryImpl;
-import org.slf4j.Logger;
 
+import org.slf4j.Logger;
 import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.distributed.shared.JMXUtil;

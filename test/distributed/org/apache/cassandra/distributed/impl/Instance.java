@@ -1031,8 +1031,8 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
 
     private static class CapturingOutput implements Closeable
     {
-        private final ByteArrayOutputStream outBase = new ByteArrayOutputStream();
-        private final ByteArrayOutputStream errBase = new ByteArrayOutputStream();
+                private final ByteArrayOutputStream outBase = new ByteArrayOutputStream();
+                private final ByteArrayOutputStream errBase = new ByteArrayOutputStream();
 
         public final PrintStream out;
         public final PrintStream err;
