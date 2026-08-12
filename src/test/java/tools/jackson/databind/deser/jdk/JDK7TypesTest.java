@@ -1,9 +1,9 @@
 package tools.jackson.databind.deser.jdk;
 
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
+import java.util.Collection;
+import java.util.Arrays;
 
 import org.junit.jupiter.api.Test;
 
@@ -61,12 +61,12 @@ public class JDK7TypesTest extends DatabindTestUtil
         }
     }
 
-    // [databind#6129]: scheme matching case-insensitive, as by `Path.of(URI)` itself
+    // [databind#6129]: scheme matching case-insensitive, as by `Paths.get(URI)` itself
     @Test
     public void testAllowedSchemeCaseInsensitive() throws Exception
     {
         ObjectMapper mapper = new ObjectMapper();
-        final Path input = Path.of(isWindows() ? "c:/tmp" : "/tmp", "foo.txt");
+        final Path input = Paths.get(isWindows() ? "c:/tmp" : "/tmp", "foo.txt");
         // Construct "file:" URI the portable way, then vary case of the scheme
         final String uriStr = input.toUri().toString();
 
@@ -82,7 +82,7 @@ public class JDK7TypesTest extends DatabindTestUtil
     @Test
     public void testCustomAllowedSchemes() throws Exception
     {
-        final Path input = Path.of(isWindows() ? "c:/tmp" : "/tmp", "foo.txt");
+        final Path input = Paths.get(isWindows() ? "c:/tmp" : "/tmp", "foo.txt");
         final String fileUri = input.toUri().toString();
 
         // Case-insensitive both ways: allow-list entry in upper case, input in lower

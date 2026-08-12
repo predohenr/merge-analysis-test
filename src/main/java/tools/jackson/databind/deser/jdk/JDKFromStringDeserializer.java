@@ -386,7 +386,7 @@ public class JDKFromStringDeserializer
 
         /**
          * Constructor for specifying URI schemes to accept: matching is done
-         * case-insensitively, same as by {@code java.nio.file.Path.of(URI)}.
+         * case-insensitively, same as by {@code java.nio.file.Paths.get(URI)}.
          *<p>
          * NOTE: for allowed schemes that have no provider installed for the system
          * class loader, look up is also attempted using this thread's context class
@@ -446,7 +446,7 @@ public class JDKFromStringDeserializer
             } catch (FileSystemNotFoundException cause) {
                 // Only reached for schemes that are allowed: retry look up using this
                 // thread's context class loader, not system class loader that is used
-                // by `Path.of()` (see [databind#2120])
+                // by `Paths.get()` (see [databind#2120])
                 try {
                     for (FileSystemProvider provider : ServiceLoader.load(FileSystemProvider.class)) {
                         if (provider.getScheme().equalsIgnoreCase(scheme)) {
@@ -468,7 +468,7 @@ public class JDKFromStringDeserializer
         /**
          * Helper method for checking whether given non-{@code null} URI scheme is one
          * of allowed ones; comparison is case-insensitive, as per URI specification
-         * (and as done by {@code java.nio.file.Path.of(URI)}).
+         * (and as done by {@code java.nio.file.Paths.get(URI)}).
          */
         private static boolean _isSchemeAllowed(Collection<String> allowedSchemes, String scheme) {
             // Common case of exact (usually lower-case) match first:
