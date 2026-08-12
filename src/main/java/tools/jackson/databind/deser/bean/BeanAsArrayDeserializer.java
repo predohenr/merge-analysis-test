@@ -274,13 +274,13 @@ public class BeanAsArrayDeserializer
             ++i;
             if (prop != null) { // normal case
                 if (activeView == null || prop.visibleInView(activeView)) {
-                    try {
-                        prop.deserializeAndSet(p, ctxt, bean);
-                    } catch (Exception e) {
-                        throw wrapAndThrow(e, bean, prop.getName(), ctxt);
-                    }
-                    continue;
+                try {
+                    prop.deserializeAndSet(p, ctxt, bean);
+                } catch (Exception e) {
+                    throw wrapAndThrow(e, bean, prop.getName(), ctxt);
                 }
+                    continue;
+            }
             }
             // otherwise, skip it (view-filtered, no prop etc)
             p.skipChildren();
