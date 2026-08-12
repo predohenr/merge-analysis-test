@@ -124,7 +124,7 @@ public class YearDeserializer extends JSR310DateTimeDeserializerBase<Year>
             //    failure is reported as `DateTimeException` and not as
             //    (unchecked, non-Jackson) `NumberFormatException`
             try {
-                return _fromNumber(ctxt, NumberInput.parseInt(string));
+            return _fromNumber(ctxt, NumberInput.parseInt(string));
             } catch (NumberFormatException e) {
                 // fall through
             }
