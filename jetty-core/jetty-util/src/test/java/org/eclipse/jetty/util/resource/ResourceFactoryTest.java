@@ -203,17 +203,17 @@ public class ResourceFactoryTest
         ResourceFactory.registerResourceFactory("custom", new CustomResourceFactory());
         try
         {
-            // Try as a normal String input
-            Resource resource = ResourceFactory.root().newResource("custom://foo");
-            assertThat(resource.getURI(), is(URI.create("custom://foo")));
-            assertThat(resource.getName(), is("custom-impl"));
+        // Try as a normal String input
+        Resource resource = ResourceFactory.root().newResource("custom://foo");
+        assertThat(resource.getURI(), is(URI.create("custom://foo")));
+        assertThat(resource.getName(), is("custom-impl"));
 
-            // Try as a formal URI object as input
-            URI uri = URI.create("custom://foo");
-            resource = ResourceFactory.root().newResource(uri);
-            assertThat(resource.getURI(), is(URI.create("custom://foo")));
-            assertThat(resource.getName(), is("custom-impl"));
-        }
+        // Try as a formal URI object as input
+        URI uri = URI.create("custom://foo");
+        resource = ResourceFactory.root().newResource(uri);
+        assertThat(resource.getURI(), is(URI.create("custom://foo")));
+        assertThat(resource.getName(), is("custom-impl"));
+    }
         finally
         {
             ResourceFactory.unregisterResourceFactory("custom");
@@ -241,21 +241,21 @@ public class ResourceFactoryTest
         ResourceFactory.registerResourceFactory("https", new URLResourceFactory());
         try
         {
-            // Try as a normal String input
-            Resource resource = ResourceFactory.root().newResource("https://webtide.com/");
-            assertThat(resource.getURI(), is(URI.create("https://webtide.com/")));
-            assertThat(resource.getName(), is("https://webtide.com/"));
+        // Try as a normal String input
+        Resource resource = ResourceFactory.root().newResource("https://webtide.com/");
+        assertThat(resource.getURI(), is(URI.create("https://webtide.com/")));
+        assertThat(resource.getName(), is("https://webtide.com/"));
 
-            // Try as a formal URI object as input
-            resource = ResourceFactory.root().newResource(uri);
-            assertThat(resource.getURI(), is(URI.create("https://webtide.com/")));
-            assertThat(resource.getName(), is("https://webtide.com/"));
+        // Try as a formal URI object as input
+        resource = ResourceFactory.root().newResource(uri);
+        assertThat(resource.getURI(), is(URI.create("https://webtide.com/")));
+        assertThat(resource.getName(), is("https://webtide.com/"));
 
-            // Try a sub-resource
-            Resource subResource = resource.resolve("favicon.ico");
-            assertThat(subResource.getFileName(), is("favicon.ico"));
-            assertThat(subResource.length(), greaterThan(0L));
-        }
+        // Try a sub-resource
+        Resource subResource = resource.resolve("favicon.ico");
+        assertThat(subResource.getFileName(), is("favicon.ico"));
+        assertThat(subResource.length(), greaterThan(0L));
+    }
         finally
         {
             ResourceFactory.unregisterResourceFactory("https");
