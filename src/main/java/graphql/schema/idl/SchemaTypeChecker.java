@@ -327,7 +327,7 @@ public class SchemaTypeChecker {
         return t -> {
             String name = TypeInfo.typeName(t);
             if (!typeRegistry.hasType(name)) {
-                TypeName unwrapped = TypeInfo.typeInfo(t).getTypeName();
+            TypeName unwrapped = TypeInfo.typeInfo(t).getTypeName();
                 errors.add(new MissingTypeError(typeOfType, typeDefinition, unwrapped));
             }
         };
@@ -337,7 +337,7 @@ public class SchemaTypeChecker {
         return ivType -> {
             String name = TypeInfo.typeName(ivType);
             if (!typeRegistry.hasType(name)) {
-                TypeName unwrapped = TypeInfo.typeInfo(ivType).getTypeName();
+            TypeName unwrapped = TypeInfo.typeInfo(ivType).getTypeName();
                 errors.add(new MissingTypeError(typeOfType, element, elementName, unwrapped));
             }
         };
