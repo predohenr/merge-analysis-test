@@ -469,16 +469,24 @@ public class SSTableImporter
 
     public static class Options
     {
-        final Set<String> srcPaths;
-        final boolean resetLevel;
         final boolean clearRepaired;
-        final boolean verifySSTables;
         final boolean verifyTokens;
-        final boolean invalidateCaches;
+        final boolean verifySSTables;
         final boolean extendedVerify;
+        final boolean resetLevel;
+        final boolean invalidateCaches;
+        final Set<String> srcPaths;
         final boolean copyData;
-        final boolean failOnMissingIndex;
-        final boolean validateIndexChecksum;
+        public final boolean validateIndexChecksum;
+        private final boolean failOnMissingIndex;
+        private final boolean verifySSTables;
+        private final boolean copyData;
+        private final boolean verifyTokens;
+        private final boolean extendedVerify;
+        private final boolean resetLevel;
+        private final boolean invalidateCaches;
+        private final Set<String> srcPaths;
+        private final boolean clearRepaired;
 
         public Options(Set<String> srcPaths, boolean resetLevel, boolean clearRepaired,
                        boolean verifySSTables, boolean verifyTokens, boolean invalidateCaches,
