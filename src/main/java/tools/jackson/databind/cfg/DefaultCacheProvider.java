@@ -20,7 +20,7 @@ public class DefaultCacheProvider
     implements CacheProvider
 {
     @Serial
-    private static final long serialVersionUID = 1L;
+private static final long serialVersionUID = 1L;
 
     private final static DefaultCacheProvider DEFAULT
         = new DefaultCacheProvider(DeserializerCache.DEFAULT_MAX_CACHE_SIZE,
