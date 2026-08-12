@@ -265,12 +265,12 @@ public abstract class CoreClientUpgradeRequest implements Response.CompleteListe
             if (notifyResponseListeners.compareAndSet(false, true))
             {
                 // Notify the listeners that we have received a response.
-                Throwable listenerError = notifyUpgradeListeners((listener) -> listener.onHandshakeResponse(request, response));
-                if (listenerError != null)
-                {
-                    if (LOG.isDebugEnabled())
-                        LOG.debug("Failure while notifying handshake response listeners", listenerError);
-                }
+            Throwable listenerError = notifyUpgradeListeners((listener) -> listener.onHandshakeResponse(request, response));
+            if (listenerError != null)
+            {
+                if (LOG.isDebugEnabled())
+                    LOG.debug("Failure while notifying handshake response listeners", listenerError);
+            }
             }
 
             if (result.getFailure() != null)
