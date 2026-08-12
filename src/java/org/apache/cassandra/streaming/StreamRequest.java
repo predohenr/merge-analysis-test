@@ -66,7 +66,7 @@ public class StreamRequest
     public static class StreamRequestSerializer implements IVersionedSerializer<StreamRequest>
     {
         @Override
-        public void serialize(StreamRequest request, DataOutputPlus out, int version) throws IOException
+public void serialize(StreamRequest request, DataOutputPlus out, int version) throws IOException
         {
             out.writeUTF(request.keyspace);
             out.writeInt(request.columnFamilies.size());
@@ -91,7 +91,7 @@ public class StreamRequest
         }
 
         @Override
-        public StreamRequest deserialize(DataInputPlus in, int version) throws IOException
+public StreamRequest deserialize(DataInputPlus in, int version) throws IOException
         {
             String keyspace = in.readUTF();
             int cfCount = in.readInt();
@@ -129,7 +129,7 @@ public class StreamRequest
         }
 
         @Override
-        public long serializedSize(StreamRequest request, int version)
+public long serializedSize(StreamRequest request, int version)
         {
             long size = TypeSizes.sizeof(request.keyspace);
             size += TypeSizes.sizeof(request.columnFamilies.size());

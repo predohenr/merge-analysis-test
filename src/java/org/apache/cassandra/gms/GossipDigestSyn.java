@@ -116,4 +116,3 @@ class GossipDigestSynSerializer implements IVersionedSerializer<GossipDigestSyn>
         return size;
     }
 }
-
