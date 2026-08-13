@@ -127,7 +127,7 @@ public class CoreXMLDeserializers
                     ? XMLConstants.NULL_NS_URI : namespaceURI.asString();
             if (prefix != null) {
                 return new QName(ns, localPart.asString(), prefix.asString());
-            }
+                }
             return new QName(ns, localPart.asString());
         }
 
