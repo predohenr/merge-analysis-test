@@ -52,6 +52,10 @@ public interface DeferredExecutionSupport {
     /**
      * An implementation that actually executes the deferred fields.
      */
+
+    /**
+     * An implementation that actually executes the deferred fields.
+     */
     class DeferredExecutionSupportImpl implements DeferredExecutionSupport {
         private final ImmutableListMultimap<DeferredExecution, MergedField> deferredExecutionToFields;
         private final ImmutableSet<MergedField> deferredFields;
@@ -181,6 +185,10 @@ public interface DeferredExecutionSupport {
             );
         }
     }
+
+    /**
+     * A no-op implementation that should be used when incremental support is not enabled for the current execution.
+     */
 
     /**
      * A no-op implementation that should be used when incremental support is not enabled for the current execution.
