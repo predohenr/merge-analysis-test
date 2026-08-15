@@ -120,6 +120,24 @@ public class BybitMarketDataService extends BybitMarketDataServiceRaw implements
     return result;
   }
 
+  public static OrderBook convertOrderBook(BybitOrderbook ob, Instrument pair) {
+    List<LimitOrder> bids =
+        ob.getBids().entrySet().stream()
+            .map(e -> new LimitOrder(OrderType.BID, e.getValue(), pair, null, null, e.getKey()))
+            .collect(Collectors.toList());
+    List<LimitOrder> asks =
+        ob.getAsks().entrySet().stream()
+            .map(e -> new LimitOrder(OrderType.ASK, e.getValue(), pair, null, null, e.getKey()))
+            .collect(Collectors.toList());
+    return new OrderBook(
+        Date.from(Instant.ofEpochMilli(ob.getTimestamp())), asks, bids);
+  }
+
+  @Override
+  public OrderBook getOrderBook(CurrencyPair currencyPair, Object... args) throws IOException {
+    return getOrderBook((Instrument) currencyPair, args);
+  }
+
   @Override
   public OrderBook getOrderBook(Instrument instrument, Object... args) throws IOException {
     Assert.notNull(instrument, "Null instrument");
@@ -134,24 +152,6 @@ public class BybitMarketDataService extends BybitMarketDataServiceRaw implements
         getOrderbook(category, BybitAdapters.convertToBybitSymbol(instrument), limitDepth);
 
     return convertOrderBook(response.getResult(), instrument);
-  }
-
-  @Override
-  public OrderBook getOrderBook(CurrencyPair currencyPair, Object... args) throws IOException {
-    return getOrderBook((Instrument) currencyPair, args);
-  }
-
-  public static OrderBook convertOrderBook(BybitOrderbook ob, Instrument pair) {
-    List<LimitOrder> bids =
-        ob.getBids().entrySet().stream()
-            .map(e -> new LimitOrder(OrderType.BID, e.getValue(), pair, null, null, e.getKey()))
-            .collect(Collectors.toList());
-    List<LimitOrder> asks =
-        ob.getAsks().entrySet().stream()
-            .map(e -> new LimitOrder(OrderType.ASK, e.getValue(), pair, null, null, e.getKey()))
-            .collect(Collectors.toList());
-    return new OrderBook(
-        Date.from(Instant.ofEpochMilli(ob.getTimestamp())), asks, bids);
   }
 
   public CandleStickData getCandleStickData(Instrument instrument, CandleStickDataParams params)
