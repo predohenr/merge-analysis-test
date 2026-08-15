@@ -72,19 +72,6 @@ public class BybitMarketDataServiceTest extends BaseWiremockTest {
   }
 
   @Test
-  public void testGetOrderBook() throws Exception {
-    initGetStub("/v5/market/orderbook", "/getOrderbookSpot.json5");
-
-    OrderBook orderBook = marketDataService.getOrderBook(CurrencyPair.BTC_USD);
-
-    assertThat(orderBook.getBids()).hasSize(2);
-    assertThat(orderBook.getAsks()).hasSize(2);
-    assertThat(orderBook.getBids().get(0).getLimitPrice()).isEqualTo(new BigDecimal("65485.47"));
-    assertThat(orderBook.getBids().get(0).getInstrument()).isEqualTo(CurrencyPair.BTC_USD);
-    assertThat(orderBook.getAsks().get(0).getLimitPrice()).isEqualTo(new BigDecimal("65557.7"));
-  }
-
-  @Test
   public void testGetFundingRateHistory() throws Exception {
     initGetStub("/v5/market/funding/history", "/getFundingRateHistory.json5");
 
@@ -95,5 +82,18 @@ public class BybitMarketDataServiceTest extends BaseWiremockTest {
     assertThat(fundingRateHistory.get(0).getFundingRate()).isEqualTo(new BigDecimal("0.0001"));
     assertThat(fundingRateHistory.get(0).getFundingRateTimestamp()).isEqualTo(Instant.ofEpochMilli(1672051897447L));
 
+  }
+
+  @Test
+  public void testGetOrderBook() throws Exception {
+    initGetStub("/v5/market/orderbook", "/getOrderbookSpot.json5");
+
+    OrderBook orderBook = marketDataService.getOrderBook(CurrencyPair.BTC_USD);
+
+    assertThat(orderBook.getBids()).hasSize(2);
+    assertThat(orderBook.getAsks()).hasSize(2);
+    assertThat(orderBook.getBids().get(0).getLimitPrice()).isEqualTo(new BigDecimal("65485.47"));
+    assertThat(orderBook.getBids().get(0).getInstrument()).isEqualTo(CurrencyPair.BTC_USD);
+    assertThat(orderBook.getAsks().get(0).getLimitPrice()).isEqualTo(new BigDecimal("65557.7"));
   }
 }
