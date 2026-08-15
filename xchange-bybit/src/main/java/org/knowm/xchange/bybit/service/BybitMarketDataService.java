@@ -18,9 +18,9 @@ import org.knowm.xchange.bybit.dto.marketdata.tickers.option.BybitOptionTicker;
 import org.knowm.xchange.bybit.dto.marketdata.tickers.spot.BybitSpotTicker;
 import org.knowm.xchange.client.ResilienceRegistries;
 import org.knowm.xchange.currency.CurrencyPair;
+import org.knowm.xchange.dto.marketdata.CandleStickData;
 import org.knowm.xchange.dto.Order.OrderType;
 import org.knowm.xchange.dto.marketdata.OrderBook;
-import org.knowm.xchange.dto.marketdata.CandleStickData;
 import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.dto.trade.LimitOrder;
 import org.knowm.xchange.exceptions.NotYetImplementedForExchangeException;
@@ -121,22 +121,6 @@ public class BybitMarketDataService extends BybitMarketDataServiceRaw implements
   }
 
   @Override
-  public OrderBook getOrderBook(Instrument instrument, Object... args) throws IOException {
-    Assert.notNull(instrument, "Null instrument");
-
-    BybitCategory category = BybitAdapters.getCategory(instrument);
-    int limitDepth = 100;
-    if (args != null && args.length > 0 && args[0] instanceof Integer) {
-      limitDepth = (Integer) args[0];
-    }
-
-    BybitResult<BybitOrderbook> response =
-        getOrderbook(category, BybitAdapters.convertToBybitSymbol(instrument), limitDepth);
-
-    return convertOrderBook(response.getResult(), instrument);
-  }
-
-  @Override
   public OrderBook getOrderBook(CurrencyPair currencyPair, Object... args) throws IOException {
     return getOrderBook((Instrument) currencyPair, args);
   }
@@ -193,5 +177,21 @@ public class BybitMarketDataService extends BybitMarketDataServiceRaw implements
     BybitCategory category = BybitAdapters.getCategory(instrument);
     String symbol = BybitAdapters.convertToBybitSymbol(instrument);
     return getCandleStickDataRaw(category, symbol, interval, start, end, limit);
+  }
+
+  @Override
+  public OrderBook getOrderBook(Instrument instrument, Object... args) throws IOException {
+    Assert.notNull(instrument, "Null instrument");
+
+    BybitCategory category = BybitAdapters.getCategory(instrument);
+    int limitDepth = 100;
+    if (args != null && args.length > 0 && args[0] instanceof Integer) {
+      limitDepth = (Integer) args[0];
+    }
+
+    BybitResult<BybitOrderbook> response =
+        getOrderbook(category, BybitAdapters.convertToBybitSymbol(instrument), limitDepth);
+
+    return convertOrderBook(response.getResult(), instrument);
   }
 }

@@ -9,8 +9,8 @@ import org.junit.Test;
 import org.knowm.xchange.Exchange;
 import org.knowm.xchange.currency.CurrencyPair;
 import org.knowm.xchange.derivative.FuturesContract;
-import org.knowm.xchange.dto.marketdata.OrderBook;
 import org.knowm.xchange.dto.marketdata.CandleStickData;
+import org.knowm.xchange.dto.marketdata.OrderBook;
 import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.service.marketdata.MarketDataService;
 import org.knowm.xchange.service.trade.params.DefaultCandleStickParam;
@@ -70,19 +70,6 @@ public class BybitMarketDataServiceTest extends BaseWiremockTest {
   }
 
   @Test
-  public void testGetOrderBook() throws Exception {
-    initGetStub("/v5/market/orderbook", "/getOrderbookSpot.json5");
-
-    OrderBook orderBook = marketDataService.getOrderBook(CurrencyPair.BTC_USD);
-
-    assertThat(orderBook.getBids()).hasSize(2);
-    assertThat(orderBook.getAsks()).hasSize(2);
-    assertThat(orderBook.getBids().get(0).getLimitPrice()).isEqualTo(new BigDecimal("65485.47"));
-    assertThat(orderBook.getBids().get(0).getInstrument()).isEqualTo(CurrencyPair.BTC_USD);
-    assertThat(orderBook.getAsks().get(0).getLimitPrice()).isEqualTo(new BigDecimal("65557.7"));
-  }
-
-  @Test
   public void testGetCandleStickData() throws Exception {
     initGetStub("/v5/market/kline", "/getKlines.json5");
 
@@ -107,5 +94,18 @@ public class BybitMarketDataServiceTest extends BaseWiremockTest {
         .isEqualTo(new BigDecimal("268611"));
     assertThat(candleStickData.getCandleSticks().get(0).getQuotaVolume())
         .isEqualTo(new BigDecimal("15.74462667"));
+  }
+
+  @Test
+  public void testGetOrderBook() throws Exception {
+    initGetStub("/v5/market/orderbook", "/getOrderbookSpot.json5");
+
+    OrderBook orderBook = marketDataService.getOrderBook(CurrencyPair.BTC_USD);
+
+    assertThat(orderBook.getBids()).hasSize(2);
+    assertThat(orderBook.getAsks()).hasSize(2);
+    assertThat(orderBook.getBids().get(0).getLimitPrice()).isEqualTo(new BigDecimal("65485.47"));
+    assertThat(orderBook.getBids().get(0).getInstrument()).isEqualTo(CurrencyPair.BTC_USD);
+    assertThat(orderBook.getAsks().get(0).getLimitPrice()).isEqualTo(new BigDecimal("65557.7"));
   }
 }

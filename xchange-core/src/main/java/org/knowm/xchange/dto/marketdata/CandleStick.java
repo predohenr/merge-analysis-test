@@ -3,13 +3,10 @@ package org.knowm.xchange.dto.marketdata;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.ToString;
-
 import java.math.BigDecimal;
-import java.time.Instant;
-import java.util.Date;
 import lombok.ToString;
+import java.time.Instant;
+import lombok.Getter;
 
 /**
  * Data object representing a CandleStick
