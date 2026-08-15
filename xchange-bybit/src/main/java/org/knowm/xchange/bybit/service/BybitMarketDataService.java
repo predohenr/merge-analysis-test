@@ -18,8 +18,8 @@ import org.knowm.xchange.bybit.dto.marketdata.tickers.option.BybitOptionTicker;
 import org.knowm.xchange.bybit.dto.marketdata.tickers.spot.BybitSpotTicker;
 import org.knowm.xchange.client.ResilienceRegistries;
 import org.knowm.xchange.currency.CurrencyPair;
-import org.knowm.xchange.dto.Order.OrderType;
 import org.knowm.xchange.dto.marketdata.OrderBook;
+import org.knowm.xchange.dto.Order.OrderType;
 import org.knowm.xchange.dto.marketdata.CandleStickData;
 import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.dto.trade.LimitOrder;
@@ -136,11 +136,6 @@ public class BybitMarketDataService extends BybitMarketDataServiceRaw implements
     return convertOrderBook(response.getResult(), instrument);
   }
 
-  @Override
-  public OrderBook getOrderBook(CurrencyPair currencyPair, Object... args) throws IOException {
-    return getOrderBook((Instrument) currencyPair, args);
-  }
-
   public static OrderBook convertOrderBook(BybitOrderbook ob, Instrument pair) {
     List<LimitOrder> bids =
         ob.getBids().entrySet().stream()
@@ -152,6 +147,11 @@ public class BybitMarketDataService extends BybitMarketDataServiceRaw implements
             .collect(Collectors.toList());
     return new OrderBook(
         Date.from(Instant.ofEpochMilli(ob.getTimestamp())), asks, bids);
+  }
+
+  @Override
+  public OrderBook getOrderBook(CurrencyPair currencyPair, Object... args) throws IOException {
+    return getOrderBook((Instrument) currencyPair, args);
   }
 
   public CandleStickData getCandleStickData(Instrument instrument, CandleStickDataParams params)
