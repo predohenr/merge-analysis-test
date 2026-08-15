@@ -142,7 +142,7 @@ class DefaultBeanIntrospector implements BeanIntrospector {
     @Nullable
     private BeanIntrospectionReference<Object> findIntrospectionReference(Class<?> beanType) {
         String beanTypeName = beanType.getName();
-        BeanIntrospectionReference<Object> reference = getIntrospections().get(beanTypeName);
+        BeanIntrospectionReference<Object> reference = getIntrospections(effectiveClassLoader).get(beanTypeName);
         if (reference != null) {
             return reference;
         }
