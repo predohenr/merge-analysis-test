@@ -15,6 +15,7 @@
  */
 package org.apache.ibatis.submitted.cursor_simple;
 
+import java.io.IOException;
 import java.io.Reader;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -161,28 +162,7 @@ class CursorSimpleTest {
   }
 
   @Test
-  void cursorIteratorNoSuchElementExceptionWithHasNext() {
-    try (SqlSession sqlSession = sqlSessionFactory.openSession();
-        Cursor<User> usersCursor = sqlSession.selectCursor("getAllUsers", null, new RowBounds(1, 1))) {
-      try {
-        Iterator<User> iterator = usersCursor.iterator();
-
-        User user = iterator.next();
-        Assertions.assertEquals("User2", user.getName());
-        Assertions.assertEquals(1, usersCursor.getCurrentIndex());
-
-        Assertions.assertFalse(iterator.hasNext());
-        iterator.next();
-        Assertions.fail("We should have failed since we call next() when hasNext() returned false");
-      } catch (NoSuchElementException e) {
-        Assertions.assertFalse(usersCursor.isOpen());
-        Assertions.assertTrue(usersCursor.isConsumed());
-      }
-    }
-  }
-
-  @Test
-  void cursorIteratorNoSuchElementExceptionNoHasNext() {
+  void cursorIteratorNoSuchElementExceptionNoHasNext() throws IOException {
     try (SqlSession sqlSession = sqlSessionFactory.openSession();
         Cursor<User> usersCursor = sqlSession.selectCursor("getAllUsers", null, new RowBounds(1, 1))) {
       try {
@@ -211,6 +191,96 @@ class CursorSimpleTest {
       Assertions.assertFalse(iterator.hasNext());
       Assertions.assertFalse(usersCursor.isOpen());
       Assertions.assertTrue(usersCursor.isConsumed());
+    }
+  }
+
+  @Test
+  void cursorMultipleCloseCall() throws IOException {
+    try (SqlSession sqlSession = sqlSessionFactory.openSession()) {
+      Mapper mapper = sqlSession.getMapper(Mapper.class);
+      Cursor<User> usersCursor = mapper.getAllUsers();
+
+      Assertions.assertFalse(usersCursor.isOpen());
+
+      Iterator<User> iterator = usersCursor.iterator();
+
+      // Check if hasNext, fetching is started
+      Assertions.assertTrue(iterator.hasNext());
+      Assertions.assertTrue(usersCursor.isOpen());
+      Assertions.assertFalse(usersCursor.isConsumed());
+
+      // Consume only the first result
+      User user = iterator.next();
+      Assertions.assertEquals("User1", user.getName());
+
+      usersCursor.close();
+      // Check multiple close are no-op
+      usersCursor.close();
+
+      // hasNext now return false, since the cursor is closed
+      Assertions.assertFalse(iterator.hasNext());
+      Assertions.assertFalse(usersCursor.isOpen());
+      Assertions.assertFalse(usersCursor.isConsumed());
+    }
+  }
+
+  @Test
+  void cursorUsageAfterClose() throws IOException {
+
+    try (SqlSession sqlSession = sqlSessionFactory.openSession()) {
+      Mapper mapper = sqlSession.getMapper(Mapper.class);
+
+      Cursor<User> usersCursor = mapper.getAllUsers();
+      try {
+        Iterator<User> iterator = usersCursor.iterator();
+        User user = iterator.next();
+        Assertions.assertEquals("User1", user.getName());
+        Assertions.assertEquals(0, usersCursor.getCurrentIndex());
+
+        user = iterator.next();
+        Assertions.assertEquals("User2", user.getName());
+        Assertions.assertEquals(1, usersCursor.getCurrentIndex());
+
+        usersCursor.close();
+
+        // hasNext now return false, since the cursor is closed
+        Assertions.assertFalse(iterator.hasNext());
+        Assertions.assertFalse(usersCursor.isOpen());
+        Assertions.assertFalse(usersCursor.isConsumed());
+
+        // trying next() will fail
+        iterator.next();
+
+        Assertions.fail("We should have failed with NoSuchElementException since Cursor is closed");
+      } catch (NoSuchElementException e) {
+        // We had an exception and current index has not changed
+        Assertions.assertEquals(1, usersCursor.getCurrentIndex());
+        usersCursor.close();
+        return;
+      }
+    }
+
+    Assertions.fail("Should have returned earlier");
+  }
+
+  @Test
+  void cursorIteratorNoSuchElementExceptionWithHasNext() throws IOException {
+    try (SqlSession sqlSession = sqlSessionFactory.openSession();
+        Cursor<User> usersCursor = sqlSession.selectCursor("getAllUsers", null, new RowBounds(1, 1))) {
+      try {
+        Iterator<User> iterator = usersCursor.iterator();
+
+        User user = iterator.next();
+        Assertions.assertEquals("User2", user.getName());
+        Assertions.assertEquals(1, usersCursor.getCurrentIndex());
+
+        Assertions.assertFalse(iterator.hasNext());
+        iterator.next();
+        Assertions.fail("We should have failed since we call next() when hasNext() returned false");
+      } catch (NoSuchElementException e) {
+        Assertions.assertFalse(usersCursor.isOpen());
+        Assertions.assertTrue(usersCursor.isConsumed());
+      }
     }
   }
 
@@ -259,7 +329,7 @@ class CursorSimpleTest {
   }
 
   @Test
-  void cursorMultipleCloseCall() {
+  void testCursorMultipleCloseCall() {
     try (SqlSession sqlSession = sqlSessionFactory.openSession()) {
       Mapper mapper = sqlSession.getMapper(Mapper.class);
       Cursor<User> usersCursor = mapper.getAllUsers();
@@ -289,7 +359,29 @@ class CursorSimpleTest {
   }
 
   @Test
-  void cursorUsageAfterClose() {
+  void testCursorIteratorNoSuchElementExceptionWithHasNext() {
+
+    try (SqlSession sqlSession = sqlSessionFactory.openSession();
+        Cursor<User> usersCursor = sqlSession.selectCursor("getAllUsers", null, new RowBounds(1, 1))) {
+      try {
+        Iterator<User> iterator = usersCursor.iterator();
+
+        User user = iterator.next();
+        Assertions.assertEquals("User2", user.getName());
+        Assertions.assertEquals(1, usersCursor.getCurrentIndex());
+
+        Assertions.assertFalse(iterator.hasNext());
+        iterator.next();
+        Assertions.fail("We should have failed since we call next() when hasNext() returned false");
+      } catch (NoSuchElementException e) {
+        Assertions.assertFalse(usersCursor.isOpen());
+        Assertions.assertTrue(usersCursor.isConsumed());
+      }
+    }
+  }
+
+  @Test
+  void testCursorUsageAfterClose() {
 
     try (SqlSession sqlSession = sqlSessionFactory.openSession()) {
       Mapper mapper = sqlSession.getMapper(Mapper.class);
@@ -325,6 +417,26 @@ class CursorSimpleTest {
     }
 
     Assertions.fail("Should have returned earlier");
+  }
+
+  @Test
+  void testCursorIteratorNoSuchElementExceptionNoHasNext() {
+    try (SqlSession sqlSession = sqlSessionFactory.openSession();
+        Cursor<User> usersCursor = sqlSession.selectCursor("getAllUsers", null, new RowBounds(1, 1))) {
+      try {
+        Iterator<User> iterator = usersCursor.iterator();
+        User user = iterator.next();
+        Assertions.assertEquals("User2", user.getName());
+        Assertions.assertEquals(1, usersCursor.getCurrentIndex());
+
+        // Trying next() without hasNext()
+        iterator.next();
+        Assertions.fail("We should have failed since we call next() when is no more items");
+      } catch (NoSuchElementException e) {
+        Assertions.assertFalse(usersCursor.isOpen());
+        Assertions.assertTrue(usersCursor.isConsumed());
+      }
+    }
   }
 
   @Test
