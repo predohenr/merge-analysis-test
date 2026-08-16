@@ -95,6 +95,19 @@ public class FormTest
             server.stop();
     }
 
+    private AsyncRequestContent newContent(int size)
+    {
+        byte[] key = "foo=".getBytes(StandardCharsets.US_ASCII);
+        byte[] value = new byte[size - key.length];
+        Arrays.fill(value, (byte)'x');
+        return new AsyncRequestContent(ByteBuffer.wrap(key), ByteBuffer.wrap(value));
+    }
+
+    public static Stream<Integer> formKeysScenarios()
+    {
+        return Stream.of(null, -1, 0, MAX_FORM_KEYS);
+    }
+
     public static Stream<Arguments> formContentSizeScenarios()
     {
         return Stream.of(
@@ -153,17 +166,52 @@ public class FormTest
         assertEquals(expectedStatus, response.getStatus());
     }
 
-    private AsyncRequestContent newContent(int size)
+    @ParameterizedTest
+    @MethodSource("formContentSizeScenarios")
+    public void testMaxFormContentSizeExceeded(Integer maxFormContentSize, boolean withContentLength) throws Exception
     {
-        byte[] key = "foo=".getBytes(StandardCharsets.US_ASCII);
-        byte[] value = new byte[size - key.length];
-        Arrays.fill(value, (byte)'x');
-        return new AsyncRequestContent(ByteBuffer.wrap(key), ByteBuffer.wrap(value));
-    }
+        start(handler ->
+        {
+            if (maxFormContentSize != null)
+                handler.setMaxFormContentSize(maxFormContentSize);
+            return new HttpServlet()
+            {
+                @Override
+                protected void service(HttpServletRequest request, HttpServletResponse response)
+                {
+                    request.getParameterMap();
+                }
+            };
+        });
 
-    public static Stream<Integer> formKeysScenarios()
-    {
-        return Stream.of(null, -1, 0, MAX_FORM_KEYS);
+        byte[] key = "foo=".getBytes(StandardCharsets.US_ASCII);
+        int length = (maxFormContentSize == null || maxFormContentSize < 0)
+            ? ContextHandler.DEFAULT_MAX_FORM_CONTENT_SIZE
+            : maxFormContentSize;
+        // Avoid empty value.
+        length = length + 1;
+        byte[] value = new byte[length];
+        Arrays.fill(value, (byte)'x');
+        AsyncRequestContent content = new AsyncRequestContent(ByteBuffer.wrap(key), ByteBuffer.wrap(value));
+
+        ContentResponse response = client.newRequest("localhost", connector.getLocalPort())
+            .method(HttpMethod.POST)
+            .path(contextPath + servletPath)
+            .headers(headers -> headers.put(HttpHeader.CONTENT_TYPE, MimeTypes.Type.FORM_ENCODED.asString()))
+            .body(content)
+            .onRequestBegin(request ->
+            {
+                if (withContentLength)
+                    content.close();
+            })
+            .onRequestCommit(request ->
+            {
+                if (!withContentLength)
+                    content.close();
+            })
+            .send();
+
+        assertEquals(HttpStatus.BAD_REQUEST_400, response.getStatus());
     }
 
     @ParameterizedTest
@@ -201,6 +249,20 @@ public class FormTest
             .send();
 
         assertEquals(HttpStatus.BAD_REQUEST_400, response.getStatus());
+    }
+
+    public static Stream<Arguments> formContentSizeScenarios()
+    {
+        return Stream.of(
+            Arguments.of(null, true),
+            Arguments.of(null, false),
+            Arguments.of(-1, true),
+            Arguments.of(-1, false),
+            Arguments.of(0, true),
+            Arguments.of(0, false),
+            Arguments.of(MAX_FORM_CONTENT_SIZE, true),
+            Arguments.of(MAX_FORM_CONTENT_SIZE, false)
+        );
     }
 
     @Test
