@@ -83,12 +83,12 @@ public class CompressedSequentialWriter extends SequentialWriter
     private static SequentialWriterOption buildOption(SequentialWriterOption option, CompressionParams parameters)
     {
         return SequentialWriterOption.newBuilder()
-                                     .bufferSize(parameters.chunkLength())
-                                     .bufferType(parameters.getSstableCompressor().preferredBufferType())
-                                     .trickleFsync(option.trickleFsync())
-                                     .trickleFsyncByteInterval(option.trickleFsyncByteInterval())
-                                     .finishOnClose(option.finishOnClose())
-                                     .build();
+                            .bufferSize(parameters.chunkLength())
+                            .bufferType(parameters.getSstableCompressor().preferredBufferType())
+                            .trickleFsync(option.trickleFsync())
+                            .trickleFsyncByteInterval(option.trickleFsyncByteInterval())
+                            .finishOnClose(option.finishOnClose())
+                            .build();
     }
 
     public CompressedSequentialWriter(File file,
