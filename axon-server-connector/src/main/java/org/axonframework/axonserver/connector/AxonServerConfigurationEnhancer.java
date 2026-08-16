@@ -18,8 +18,8 @@ package org.axonframework.axonserver.connector;
 
 import org.axonframework.axonserver.connector.command.AxonServerCommandBusConnector;
 import org.axonframework.axonserver.connector.event.AxonServerEventStorageEngineFactory;
-import org.axonframework.axonserver.connector.event.EventProcessorControlService;
 import org.axonframework.axonserver.connector.query.AxonServerQueryBusConnector;
+import org.axonframework.axonserver.connector.event.EventProcessorControlService;
 import org.axonframework.commandhandling.distributed.CommandBusConnector;
 import org.axonframework.commandhandling.distributed.PayloadConvertingCommandBusConnector;
 import org.axonframework.common.FutureUtils;
