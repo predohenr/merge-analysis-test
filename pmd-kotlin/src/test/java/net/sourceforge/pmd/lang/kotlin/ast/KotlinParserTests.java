@@ -7,27 +7,26 @@ package net.sourceforge.pmd.lang.kotlin.ast;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.ArrayList;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import java.util.Iterator;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import java.util.List;
 import java.util.stream.Stream;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import org.junit.jupiter.api.Test;
-
-import net.sourceforge.pmd.lang.ast.LexException;
 import net.sourceforge.pmd.lang.ast.ParseException;
-import net.sourceforge.pmd.lang.document.FileId;
 import net.sourceforge.pmd.lang.kotlin.ast.KotlinParser.KtClassDeclaration;
 import net.sourceforge.pmd.lang.kotlin.ast.KotlinParser.KtFunctionDeclaration;
-import net.sourceforge.pmd.lang.kotlin.ast.KotlinParser.KtImportHeader;
-import net.sourceforge.pmd.lang.kotlin.ast.KotlinParser.KtKotlinFile;
+import net.sourceforge.pmd.lang.document.FileId;
+import net.sourceforge.pmd.lang.ast.LexException;
 import net.sourceforge.pmd.lang.rule.xpath.Attribute;
+import net.sourceforge.pmd.lang.kotlin.ast.KotlinParser.KtKotlinFile;
+import net.sourceforge.pmd.lang.kotlin.ast.KotlinParser.KtImportHeader;
 
 /**
  * Miscellaneous Kotlin parser regression tests.
