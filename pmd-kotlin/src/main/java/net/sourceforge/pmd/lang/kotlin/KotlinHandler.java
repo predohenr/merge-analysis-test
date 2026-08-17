@@ -47,6 +47,11 @@ public class KotlinHandler extends AbstractPmdLanguageVersionHandler {
     }
 
     @Override
+    public Parser getParser() {
+        return new PmdKotlinParser();
+    }
+
+    @Override
     public DesignerBindings getDesignerBindings() {
         return KotlinDesignerBindings.INSTANCE;
     }
