@@ -27,19 +27,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.crypto.Mac;
-import javax.crypto.SecretKey;
+import static info.bitrich.xchangestream.okex.OkexStreamingService.UNSUBSCRIBE;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.security.InvalidKeyException;
+import javax.crypto.SecretKey;
+import java.util.concurrent.TimeUnit;
+import java.io.IOException;
+import java.util.Base64;
+import static info.bitrich.xchangestream.okex.OkexStreamingService.SUBSCRIBE;
+import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.concurrent.TimeUnit;
-
-import static info.bitrich.xchangestream.okex.OkexStreamingService.SUBSCRIBE;
-import static info.bitrich.xchangestream.okex.OkexStreamingService.UNSUBSCRIBE;
 
 public class OkexPrivateStreamingService extends JsonNettyStreamingService {
 
