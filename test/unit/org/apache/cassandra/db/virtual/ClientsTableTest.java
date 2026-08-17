@@ -70,7 +70,8 @@ public class ClientsTableTest extends CQLTester
         shouldUseEncryption(true);
         shouldUseClientCertificate(true);
         ResultSet result = executeNet("SELECT * FROM vts.clients");
-        assertThat(result.getColumnDefinitions().size()).isEqualTo(15);
+        assertThat(result.getColumnDefinitions().size()).isEqualTo(13);
+        
         for (Row r : result)
         {
             Assert.assertEquals(InetAddress.getLoopbackAddress(), r.getInet("address"));
