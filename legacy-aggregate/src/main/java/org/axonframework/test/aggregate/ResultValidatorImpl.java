@@ -15,36 +15,61 @@
  */
 
 package org.axonframework.test.aggregate;
-
-import jakarta.annotation.Nonnull;
-import org.axonframework.messaging.commandhandling.CommandMessage;
-import org.axonframework.messaging.commandhandling.CommandResultMessage;
-import org.axonframework.messaging.core.HandlerExecutionException;
-import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
-import org.axonframework.modelling.command.Aggregate;
-import org.axonframework.test.FixtureExecutionException;
-import org.axonframework.test.fixture.Reporter;
-import org.axonframework.test.matchers.FieldFilter;
-import org.axonframework.test.matchers.MapStringEntryMatcher;
-import org.axonframework.test.matchers.PayloadMatcher;
-import org.hamcrest.CoreMatchers;
 import org.hamcrest.Description;
-import org.hamcrest.Matcher;
-import org.hamcrest.StringDescription;
-
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import java.util.stream.Stream;
-
 import static org.axonframework.test.matchers.Matchers.deepEquals;
 import static org.hamcrest.CoreMatchers.*;
+import java.util.stream.Stream;
+import org.axonframework.modelling.command.Aggregate;
+import org.axonframework.test.fixture.Reporter;
+import org.axonframework.messaging.HandlerExecutionException;
+import org.hamcrest.CoreMatchers;
+import org.axonframework.messaging.Message;
+import org.axonframework.test.matchers.MapStringEntryMatcher;
+import java.util.List;
+import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.eventhandling.EventMessage;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.test.FixtureExecutionException;
+import org.axonframework.test.matchers.PayloadMatcher;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Objects;
+import org.axonframework.test.matchers.FieldFilter;
+import java.util.function.Consumer;
+import java.util.Arrays;
+import org.hamcrest.StringDescription;
+import jakarta.annotation.Nonnull;
+import org.hamcrest.Matcher;
+import org.axonframework.commandhandling.CommandResultMessage;
+import java.util.function.Supplier;
+import org.axonframework.test.fixture.Reporter;
+import jakarta.annotation.Nonnull;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.test.matchers.MapStringEntryMatcher;
+import org.axonframework.messaging.commandhandling.CommandResultMessage;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.hamcrest.Matcher;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.Objects;
+import org.axonframework.messaging.core.HandlerExecutionException;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import org.hamcrest.CoreMatchers;
+import java.util.stream.Stream;
+import java.util.List;
+import org.axonframework.test.matchers.PayloadMatcher;
+import org.axonframework.test.FixtureExecutionException;
+import java.util.Map;
+import static org.axonframework.test.matchers.Matchers.deepEquals;
+import static org.hamcrest.CoreMatchers.*;
+import org.axonframework.messaging.core.ResultMessage;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.modelling.command.Aggregate;
+import org.axonframework.test.matchers.FieldFilter;
+import org.hamcrest.Description;
+import org.hamcrest.StringDescription;
 
 /**
  * Implementation of the ResultValidator. It also acts as a CommandCallback, and registers the actual result.
@@ -60,7 +85,7 @@ public class ResultValidatorImpl<T> implements ResultValidator<T> {
     private final Reporter reporter = new Reporter();
     private final FieldFilter fieldFilter;
     private final Supplier<Aggregate<T>> state;
-    //    private final DeadlineManagerValidator deadlineManagerValidator;
+//    private final DeadlineManagerValidator deadlineManagerValidator;
     private Message actualReturnValue;
     private Throwable actualException;
 
@@ -498,8 +523,7 @@ public class ResultValidatorImpl<T> implements ResultValidator<T> {
 
     /**
      * Makes sure the execution phase has finishes without any Errors ir FixtureExecutionExceptions. If an error was
-     * recorded, it will be thrown immediately. This allows one to distinguish between failed tests, and tests in
-     * error.
+     * recorded, it will be thrown immediately. This allows one to distinguish between failed tests, and tests in error.
      */
     public void assertValidRecording() {
         if (actualException instanceof Error) {
