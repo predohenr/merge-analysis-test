@@ -35,8 +35,8 @@ import net.osmand.osm.PoiType;
 import net.osmand.search.SearchUICore.SearchResultMatcher;
 import net.osmand.search.core.SearchPhrase.NameStringMatcher;
 import net.osmand.search.core.SearchPhrase.SearchPhraseDataType;
-import net.osmand.shared.util.PlatformUtil;
 import net.osmand.util.*;
+import net.osmand.shared.util.PlatformUtil;
 import net.osmand.util.LocationParser.ParsedOpenLocationCode;
 
 import java.io.IOException;
@@ -267,7 +267,7 @@ public class SearchCoreFactory {
 			return getClass().getSimpleName();
 		}
 	}
-
+	
 	public static class SearchRegionByNameAPI extends SearchBaseAPI {
 
 		public SearchRegionByNameAPI() {
@@ -843,7 +843,7 @@ public class SearchCoreFactory {
 				public boolean isCancelled() {
 					return resultMatcher.isCancelled() && (limit < LIMIT);
 				}
-
+				
 				@Override
 				public boolean isSkippedDuplication() {
 					return isSkipped;
