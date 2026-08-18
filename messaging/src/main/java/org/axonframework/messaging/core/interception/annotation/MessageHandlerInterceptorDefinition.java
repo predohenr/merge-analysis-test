@@ -157,7 +157,7 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
                               }
                       ).cast();
                   });
-       }
+        }
     }
 
     private static class InterceptedMessageHandlingMember<T>
