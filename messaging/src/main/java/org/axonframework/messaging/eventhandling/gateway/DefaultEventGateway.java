@@ -15,19 +15,16 @@
  */
 
 package org.axonframework.messaging.eventhandling.gateway;
-
-import jakarta.annotation.Nonnull;
-import jakarta.annotation.Nullable;
-import org.axonframework.common.FutureUtils;
+import java.util.concurrent.CompletableFuture;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
+import org.axonframework.messaging.eventhandling.EventSink;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import java.util.List;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.EventSink;
-
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
