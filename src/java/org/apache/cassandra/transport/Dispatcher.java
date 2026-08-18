@@ -107,10 +107,11 @@ public class Dispatcher implements CQLMessageHandler.MessageConsumer<Message.Req
             // We can not respond with a custom, transport, or server exceptions since, given current implementation of clients,
             // they will defunct the connection. Without a protocol version bump that introduces an "I am going away message",
             // we have to stick to an existing error code.
-            Message.Response response = ErrorMessage.fromTransportException(new OverloadedException("Server is shutting down"));
+            Message.Response response = ErrorMessage.fromException(new OverloadedException("Server is shutting down"));
+            response.setStreamId(request.getStreamId());
             response.setWarnings(ClientWarn.instance.getWarnings());
             response.attach(request.connection);
-            FlushItem<?> toFlush = forFlusher.toFlushItem(param, channel, request, response);
+            FlushItem<?> toFlush = forFlusher.toFlushItem(channel, request, response);
             flush(toFlush);
             return;
         }
