@@ -190,6 +190,18 @@ public final class ImplicitMemberSymbols {
         );
     }
 
+    public static JFieldSymbol lombokSlf4jLoggerField(JClassSymbol classSym, JavaAstProcessor processor) {
+        // https://javadoc.io/doc/org.projectlombok/lombok/1.16.18/lombok/extern/slf4j/Slf4j.html
+
+        return new FakeFieldSym(
+                classSym,
+                "log",
+                Modifier.PRIVATE | Modifier.STATIC | Modifier.FINAL,
+                (ts, s) ->
+                        ts.declaration(processor.findSymbolCannotFail("org.slf4j.Logger"))
+        );
+    }
+
     private abstract static class FakeExecutableSymBase<T extends JExecutableSymbol> implements JExecutableSymbol {
 
         private final JClassSymbol owner;
