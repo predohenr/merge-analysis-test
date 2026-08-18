@@ -31,8 +31,8 @@ import net.sourceforge.pmd.lang.java.ast.ASTList;
 import net.sourceforge.pmd.lang.java.ast.ASTMethodCall;
 import net.sourceforge.pmd.lang.java.ast.ASTMethodDeclaration;
 import net.sourceforge.pmd.lang.java.ast.ASTNullLiteral;
-import net.sourceforge.pmd.lang.java.ast.ASTReturnStatement;
 import net.sourceforge.pmd.lang.java.ast.ASTStatement;
+import net.sourceforge.pmd.lang.java.ast.ASTReturnStatement;
 import net.sourceforge.pmd.lang.java.ast.ASTThrowStatement;
 import net.sourceforge.pmd.lang.java.ast.ASTTypeDeclaration;
 import net.sourceforge.pmd.lang.java.ast.ASTUnaryExpression;
@@ -490,6 +490,26 @@ public final class JavaRuleUtil {
         return false;
     }
 
+
+    /**
+     * Returns whether the variable is mentioned within the statement or not.
+     */
+    public static boolean hasReferencesIn(ASTStatement stmt, ASTVariableId var) {
+        return stmt.descendants(ASTVariableAccess.class)
+            .crossFindBoundaries()
+            .filterMatching(ASTNamedReferenceExpr::getReferencedSym, var.getSymbol())
+            .nonEmpty();
+    }
+
+    /**
+     * Time methods cannot be moved ever, even when there are no side-effects.
+     * The side effect they depend on is the program being executed. Are they
+     * the only methods like that?
+     */
+    public static boolean cannotBeMoved(ASTExpression initializer) {
+        return TIME_METHODS.anyMatch(initializer);
+    }
+
     /**
      * Determine if the node argument has the typical form of a "guard if", that is
      * an if statement with no else block, and the only thing the then block does is either
@@ -521,25 +541,5 @@ public final class JavaRuleUtil {
         return onlyStatementInThenBranch instanceof ASTReturnStatement
                 || onlyStatementInThenBranch instanceof ASTThrowStatement;
     }
-
-    /**
-     * Returns whether the variable is mentioned within the statement or not.
-     */
-    public static boolean hasReferencesIn(ASTStatement stmt, ASTVariableId var) {
-        return stmt.descendants(ASTVariableAccess.class)
-            .crossFindBoundaries()
-            .filterMatching(ASTNamedReferenceExpr::getReferencedSym, var.getSymbol())
-            .nonEmpty();
-    }
-
-    /**
-     * Time methods cannot be moved ever, even when there are no side-effects.
-     * The side effect they depend on is the program being executed. Are they
-     * the only methods like that?
-     */
-    public static boolean cannotBeMoved(ASTExpression initializer) {
-        return TIME_METHODS.anyMatch(initializer);
-    }
-
 
 }
