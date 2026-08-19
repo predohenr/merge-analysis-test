@@ -23,4 +23,9 @@ import picocli.CommandLine.Command;
 @Command(name = "getendpoints", description = "Print the end points that owns the key, deprecated, use getreplicas instead")
 public class GetEndpoints extends GetReplicas
 {
+    @CassandraUsage(usage = "<keyspace> <table> <key>", description = "The keyspace, the table, and the partition key for which we need to find the endpoint (e.g., pk1:pk2:pk3 for compound keys)")
+    private List<String> args = new ArrayList<>();
+
+    @Parameters(index = "2", arity = "0..1", description = "The partition key for which we need to find the endpoint (e.g., pk1:pk2:pk3 for compound keys)")
+    private String key;
 }
