@@ -2193,7 +2193,6 @@ public class BTree
     {
         if (isEmpty(tree))
             return 0;
-
         long size = ObjectSizes.sizeOfArray(tree);
         if (isLeaf(tree))
             return size;
@@ -2207,7 +2206,6 @@ public class BTree
     {
         if (isEmpty(tree))
             return 0;
-
         return ObjectSizes.sizeOfArray(tree);
     }
 
