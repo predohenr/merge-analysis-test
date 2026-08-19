@@ -1673,6 +1673,28 @@ public class RedissonMapCacheTest extends BaseMapTest {
     }
 
     @Test
+    public void testCopyPreservesTTL() {
+        testInCluster(redisson -> {
+            RMapCache<String, String> map = redisson.getMapCache("testCopySrc");
+            map.put("key1", "val1", 10, TimeUnit.SECONDS);
+            map.put("key2", "val2");
+
+            map.copy("testCopyDst");
+
+            RMapCache<String, String> mapCopy = redisson.getMapCache("testCopyDst");
+            assertThat(mapCopy.get("key1")).isEqualTo("val1");
+            assertThat(mapCopy.get("key2")).isEqualTo("val2");
+
+            long ttl = mapCopy.remainTimeToLive("key1");
+            assertThat(ttl).isBetween(5000L, 10000L);
+            assertThat(mapCopy.remainTimeToLive("key2")).isEqualTo(-1);
+
+            map.destroy();
+            mapCopy.destroy();
+        });
+    }
+
+    @Test
     public void testLeaseGet() {
         RMapCache<String, String> map = redisson.getMapCache("testLeaseGet");
 
@@ -1686,39 +1708,6 @@ public class RedissonMapCacheTest extends BaseMapTest {
         assertThat(r2.getLeaseToken()).isNotEqualTo(0L);
         assertThat(r2.isLeaseAcquired()).isFalse();
         assertThat(r2.getLeaseToken()).isEqualTo(r1.getLeaseToken());
-    }
-
-    @Test
-    public void testLeasePutTTL() throws InterruptedException {
-        RMapCache<String, String> map = redisson.getMapCache("testLeaseGet");
-
-        RLeaseGetResult<String, String> r1 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
-        assertThat(r1.getValue()).isNull();
-        assertThat(r1.getLeaseToken()).isNotEqualTo(0L);
-        assertThat(r1.isLeaseAcquired()).isTrue();
-
-        map.putWithLease("aaa", "111", 1000, TimeUnit.MILLISECONDS, r1.getLeaseToken());
-
-        Thread.sleep(1100);
-
-        RLeaseGetResult<String, String> r2 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
-        assertThat(r2.getValue()).isNull();
-        assertThat(r2.getLeaseToken()).isNotEqualTo(0L);
-        assertThat(r2.isLeaseAcquired()).isTrue();
-        assertThat(r2.getLeaseToken()).isNotEqualTo(r1.getLeaseToken());
-    }
-
-    @Test
-    public void testLeaseStaleSet() {
-        RMapCache<String, String> map = redisson.getMapCache("testLeaseStaleSet");
-
-        RLeaseGetResult<String, String> r1 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
-        assertThat(r1.getValue()).isNull();
-        assertThat(r1.getLeaseToken()).isNotEqualTo(0L);
-        assertThat(r1.isLeaseAcquired()).isTrue();
-
-        map.removeWithLease("aaa");
-        assertThat(map.putWithLease("aaa", "111", r1.getLeaseToken())).isFalse();
     }
 
     @Test
@@ -1740,15 +1729,19 @@ public class RedissonMapCacheTest extends BaseMapTest {
     }
 
     @Test
-    public void testLeaseDifferentKeys() throws InterruptedException {
-        RMapCache<String, String> map = redisson.getMapCache("testLeaseDifferentKeys");
+    public void testLeasePutTTL() throws InterruptedException {
+        RMapCache<String, String> map = redisson.getMapCache("testLeaseGet");
 
-        RLeaseGetResult<String, String> r1 = map.getWithLease("aaa", 1, TimeUnit.SECONDS);
+        RLeaseGetResult<String, String> r1 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
         assertThat(r1.getValue()).isNull();
         assertThat(r1.getLeaseToken()).isNotEqualTo(0L);
         assertThat(r1.isLeaseAcquired()).isTrue();
 
-        RLeaseGetResult<String, String> r2 = map.getWithLease("bbb", 10, TimeUnit.SECONDS);
+        map.putWithLease("aaa", "111", 1000, TimeUnit.MILLISECONDS, r1.getLeaseToken());
+
+        Thread.sleep(1100);
+
+        RLeaseGetResult<String, String> r2 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
         assertThat(r2.getValue()).isNull();
         assertThat(r2.getLeaseToken()).isNotEqualTo(0L);
         assertThat(r2.isLeaseAcquired()).isTrue();
@@ -1785,25 +1778,32 @@ public class RedissonMapCacheTest extends BaseMapTest {
     }
 
     @Test
-    public void testCopyPreservesTTL() {
-        testInCluster(redisson -> {
-            RMapCache<String, String> map = redisson.getMapCache("testCopySrc");
-            map.put("key1", "val1", 10, TimeUnit.SECONDS);
-            map.put("key2", "val2");
+    public void testLeaseStaleSet() {
+        RMapCache<String, String> map = redisson.getMapCache("testLeaseStaleSet");
 
-            map.copy("testCopyDst");
+        RLeaseGetResult<String, String> r1 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
+        assertThat(r1.getValue()).isNull();
+        assertThat(r1.getLeaseToken()).isNotEqualTo(0L);
+        assertThat(r1.isLeaseAcquired()).isTrue();
 
-            RMapCache<String, String> mapCopy = redisson.getMapCache("testCopyDst");
-            assertThat(mapCopy.get("key1")).isEqualTo("val1");
-            assertThat(mapCopy.get("key2")).isEqualTo("val2");
+        map.removeWithLease("aaa");
+        assertThat(map.putWithLease("aaa", "111", r1.getLeaseToken())).isFalse();
+    }
 
-            long ttl = mapCopy.remainTimeToLive("key1");
-            assertThat(ttl).isBetween(5000L, 10000L);
-            assertThat(mapCopy.remainTimeToLive("key2")).isEqualTo(-1);
+    @Test
+    public void testLeaseDifferentKeys() throws InterruptedException {
+        RMapCache<String, String> map = redisson.getMapCache("testLeaseDifferentKeys");
 
-            map.destroy();
-            mapCopy.destroy();
-        });
+        RLeaseGetResult<String, String> r1 = map.getWithLease("aaa", 1, TimeUnit.SECONDS);
+        assertThat(r1.getValue()).isNull();
+        assertThat(r1.getLeaseToken()).isNotEqualTo(0L);
+        assertThat(r1.isLeaseAcquired()).isTrue();
+
+        RLeaseGetResult<String, String> r2 = map.getWithLease("bbb", 10, TimeUnit.SECONDS);
+        assertThat(r2.getValue()).isNull();
+        assertThat(r2.getLeaseToken()).isNotEqualTo(0L);
+        assertThat(r2.isLeaseAcquired()).isTrue();
+        assertThat(r2.getLeaseToken()).isNotEqualTo(r1.getLeaseToken());
     }
 }
 
