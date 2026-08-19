@@ -18,10 +18,9 @@ import org.redisson.misc.RedisURI;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.concurrent.*;
+import java.util.function.Function;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 
