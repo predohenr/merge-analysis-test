@@ -17,35 +17,32 @@
 package org.axonframework.axonserver.connector.command;
 
 import com.google.protobuf.ByteString;
-import io.axoniq.axonserver.grpc.ProcessingKey;
-import io.axoniq.axonserver.grpc.SerializedObject;
-import io.axoniq.axonserver.grpc.command.Command;
-import io.axoniq.axonserver.grpc.command.CommandResponse;
-import jakarta.annotation.Nonnull;
-import jakarta.annotation.Nullable;
-import org.axonframework.axonserver.connector.MetadataConverter;
-import org.axonframework.axonserver.connector.util.ExceptionConverter;
-import org.axonframework.axonserver.connector.util.ProcessingInstructionUtils;
-import org.axonframework.axonserver.connector.util.ProcessingInstructionUtils;
-import org.axonframework.commandhandling.CommandMessage;
-import org.axonframework.commandhandling.CommandResultMessage;
-import org.axonframework.commandhandling.GenericCommandMessage;
-import org.axonframework.commandhandling.GenericCommandResultMessage;
-import org.axonframework.common.FutureUtils;
-import org.axonframework.common.annotations.Internal;
-import org.axonframework.messaging.GenericMessage;
-import org.axonframework.messaging.MessageType;
-import org.axonframework.messaging.QualifiedName;
-import org.axonframework.messaging.unitofwork.ProcessingContext;
-
-import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-
 import static org.axonframework.axonserver.connector.MetadataConverter.convertMetadataValuesToGrpc;
+import io.axoniq.axonserver.grpc.command.CommandResponse;
+import org.axonframework.messaging.unitofwork.ProcessingContext;
+import org.axonframework.commandhandling.GenericCommandMessage;
+import org.axonframework.axonserver.connector.MetadataConverter;
+import io.axoniq.axonserver.grpc.SerializedObject;
+import org.axonframework.axonserver.connector.util.ProcessingInstructionUtils;
+import jakarta.annotation.Nonnull;
+import java.util.Map;
 import static org.axonframework.axonserver.connector.util.ProcessingInstructionUtils.createProcessingInstruction;
+import org.axonframework.common.annotations.Internal;
+import io.axoniq.axonserver.grpc.command.Command;
+import org.axonframework.commandhandling.CommandResultMessage;
+import org.axonframework.messaging.QualifiedName;
+import org.axonframework.messaging.MessageType;
+import jakarta.annotation.Nullable;
+import org.axonframework.messaging.GenericMessage;
+import java.util.UUID;
+import io.axoniq.axonserver.grpc.ProcessingKey;
+import java.util.concurrent.CompletableFuture;
 import static org.axonframework.axonserver.connector.util.ProcessingInstructionUtils.priority;
+import org.axonframework.common.FutureUtils;
+import org.axonframework.commandhandling.GenericCommandResultMessage;
+import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.axonserver.connector.util.ExceptionConverter;
 import static org.axonframework.common.ObjectUtils.getOrDefault;
 
 /**
@@ -226,6 +223,7 @@ public final class CommandConverter {
             builder.addProcessingInstructions(instruction);
         });
     }
+
 
     private CommandConverter() {
         // Utility class
