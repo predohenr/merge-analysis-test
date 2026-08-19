@@ -63,7 +63,7 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
     }
 
     @Override
-    public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
+    public Object handleSync(Message message, ProcessingContext context, @Nullable T target) throws Exception {
         String taskName = String.format("Message [%s] for handler [%s]",
                                         message.type().name(),
                                         target != null ? target.getClass().getName() : null);
@@ -76,14 +76,20 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
         );
         task.start();
         try {
-            MessageStream<?> result = super.handle(message, context, target);
+            Object result = super.handleSync(message, context, target);
             task.ensureNoInterruptionWasSwallowed();
             return result;
         } catch (Exception e) {
-            return MessageStream.failed(task.detectInterruptionInsteadOfException(e));
+            throw task.detectInterruptionInsteadOfException(e);
         } finally {
             task.complete();
         }
+    }
+
+    @Override
+    public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
+        // TODO #3559 - Add timeout logic
+        return super.handle(message, context, target);
     }
 
     /**
