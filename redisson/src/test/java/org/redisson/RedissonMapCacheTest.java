@@ -1673,19 +1673,25 @@ public class RedissonMapCacheTest extends BaseMapTest {
     }
 
     @Test
-    public void testLeaseGet() {
-        RMapCache<String, String> map = redisson.getMapCache("testLeaseGet");
+    public void testCopyPreservesTTL() {
+        testInCluster(redisson -> {
+            RMapCache<String, String> map = redisson.getMapCache("testCopySrc");
+            map.put("key1", "val1", 10, TimeUnit.SECONDS);
+            map.put("key2", "val2");
 
-        RLeaseGetResult<String, String> r1 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
-        assertThat(r1.getValue()).isNull();
-        assertThat(r1.getLeaseToken()).isNotEqualTo(0L);
-        assertThat(r1.isLeaseAcquired()).isTrue();
+            map.copy("testCopyDst");
 
-        RLeaseGetResult<String, String> r2 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
-        assertThat(r2.getValue()).isNull();
-        assertThat(r2.getLeaseToken()).isNotEqualTo(0L);
-        assertThat(r2.isLeaseAcquired()).isFalse();
-        assertThat(r2.getLeaseToken()).isEqualTo(r1.getLeaseToken());
+            RMapCache<String, String> mapCopy = redisson.getMapCache("testCopyDst");
+            assertThat(mapCopy.get("key1")).isEqualTo("val1");
+            assertThat(mapCopy.get("key2")).isEqualTo("val2");
+
+            long ttl = mapCopy.remainTimeToLive("key1");
+            assertThat(ttl).isBetween(5000L, 10000L);
+            assertThat(mapCopy.remainTimeToLive("key2")).isEqualTo(-1);
+
+            map.destroy();
+            mapCopy.destroy();
+        });
     }
 
     @Test
@@ -1719,6 +1725,22 @@ public class RedissonMapCacheTest extends BaseMapTest {
 
         map.removeWithLease("aaa");
         assertThat(map.putWithLease("aaa", "111", r1.getLeaseToken())).isFalse();
+    }
+
+    @Test
+    public void testLeaseGet() {
+        RMapCache<String, String> map = redisson.getMapCache("testLeaseGet");
+
+        RLeaseGetResult<String, String> r1 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
+        assertThat(r1.getValue()).isNull();
+        assertThat(r1.getLeaseToken()).isNotEqualTo(0L);
+        assertThat(r1.isLeaseAcquired()).isTrue();
+
+        RLeaseGetResult<String, String> r2 = map.getWithLease("aaa", 10, TimeUnit.SECONDS);
+        assertThat(r2.getValue()).isNull();
+        assertThat(r2.getLeaseToken()).isNotEqualTo(0L);
+        assertThat(r2.isLeaseAcquired()).isFalse();
+        assertThat(r2.getLeaseToken()).isEqualTo(r1.getLeaseToken());
     }
 
     @Test
@@ -1782,28 +1804,6 @@ public class RedissonMapCacheTest extends BaseMapTest {
 
         assertThat(map.size()).isEqualTo(2);
         redisson.shutdown();
-    }
-
-    @Test
-    public void testCopyPreservesTTL() {
-        testInCluster(redisson -> {
-            RMapCache<String, String> map = redisson.getMapCache("testCopySrc");
-            map.put("key1", "val1", 10, TimeUnit.SECONDS);
-            map.put("key2", "val2");
-
-            map.copy("testCopyDst");
-
-            RMapCache<String, String> mapCopy = redisson.getMapCache("testCopyDst");
-            assertThat(mapCopy.get("key1")).isEqualTo("val1");
-            assertThat(mapCopy.get("key2")).isEqualTo("val2");
-
-            long ttl = mapCopy.remainTimeToLive("key1");
-            assertThat(ttl).isBetween(5000L, 10000L);
-            assertThat(mapCopy.remainTimeToLive("key2")).isEqualTo(-1);
-
-            map.destroy();
-            mapCopy.destroy();
-        });
     }
 }
 
