@@ -134,6 +134,12 @@ public class CreateTableValidationTest extends CQLTester
                              String.format("CREATE TABLE %s.\"    \" (key int PRIMARY KEY, val int)", KEYSPACE));
     }
 
+    private void expectedFailure(String statement, String errorMsg)
+    {
+        assertThatExceptionOfType(InvalidRequestException.class)
+        .isThrownBy(() -> createTableMayThrow(statement)) .withMessageContaining(errorMsg);
+    }
+
     @Test
     public void testInvalidCompactionOptions()
     {
