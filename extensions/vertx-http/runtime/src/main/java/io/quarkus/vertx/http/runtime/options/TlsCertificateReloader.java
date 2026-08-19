@@ -29,8 +29,8 @@ import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.net.KeyStoreOptions;
 import io.vertx.core.net.PemKeyCertOptions;
-import io.vertx.core.net.PemTrustOptions;
 import io.vertx.core.net.ServerSSLOptions;
+import io.vertx.core.net.PemTrustOptions;
 
 /**
  * Utility class to handle TLS certificate reloading.
