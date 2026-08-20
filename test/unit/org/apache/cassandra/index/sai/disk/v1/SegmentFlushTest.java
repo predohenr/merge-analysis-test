@@ -30,7 +30,6 @@ import java.util.List;
 
 import com.google.common.base.Stopwatch;
 
-import org.apache.lucene.index.CorruptIndexException;
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -63,6 +62,7 @@ import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
+import org.apache.lucene.index.CorruptIndexException;
 
 import static org.apache.cassandra.Util.dk;
 import static org.junit.Assert.assertEquals;
@@ -100,7 +100,7 @@ public class SegmentFlushTest
     {
         Path tmpDir = Files.createTempDirectory("SegmentFlushTest");
         IndexDescriptor indexDescriptor = IndexDescriptor.create(new Descriptor(new File(tmpDir.toFile()), "ks", "cf", new SequenceBasedSSTableId(1)), Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
-        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "ts", TimestampType.instance, 1);
+        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "ts", TimestampType.instance);
         StorageAttachedIndex index = SAITester.createMockIndex(column);
 
         SSTableIndexWriter writer = new SSTableIndexWriter(indexDescriptor, index, V1OnDiskFormat.SEGMENT_BUILD_MEMORY_LIMITER, () -> true);
@@ -121,7 +121,7 @@ public class SegmentFlushTest
     {
         Path tmpDir = Files.createTempDirectory("SegmentFlushTest");
         IndexDescriptor indexDescriptor = IndexDescriptor.create(new Descriptor(new File(tmpDir.toFile()), "ks", "cf", new SequenceBasedSSTableId(1)), Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
-        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "name", UTF8Type.instance, 1);
+        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "name", UTF8Type.instance);
         StorageAttachedIndex index = SAITester.createMockIndex(column);
 
         SSTableIndexWriter writer = new SSTableIndexWriter(indexDescriptor, index, V1OnDiskFormat.SEGMENT_BUILD_MEMORY_LIMITER, () -> true);
@@ -142,7 +142,7 @@ public class SegmentFlushTest
     {
         Path tmpDir = Files.createTempDirectory("SegmentFlushTest");
         IndexDescriptor indexDescriptor = IndexDescriptor.create(new Descriptor(new File(tmpDir.toFile()), "ks", "cf", new SequenceBasedSSTableId(1)), Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
-        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "ts", TimestampType.instance, 1);
+        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "ts", TimestampType.instance);
         StorageAttachedIndex index = SAITester.createMockIndex(column);
 
         SSTableIndexWriter writer = new SSTableIndexWriter(indexDescriptor, index, V1OnDiskFormat.SEGMENT_BUILD_MEMORY_LIMITER, () -> true);
@@ -162,7 +162,7 @@ public class SegmentFlushTest
     {
         Path tmpDir = Files.createTempDirectory("SegmentFlushTest");
         IndexDescriptor indexDescriptor = IndexDescriptor.create(new Descriptor(new File(tmpDir.toFile()), "ks", "cf", new SequenceBasedSSTableId(1)), Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
-        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "ts", TimestampType.instance, 1);
+        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "ts", TimestampType.instance);
         StorageAttachedIndex index = SAITester.createMockIndex(column);
 
         SSTableIndexWriter writer = new SSTableIndexWriter(indexDescriptor, index, V1OnDiskFormat.SEGMENT_BUILD_MEMORY_LIMITER, () -> true);
@@ -208,7 +208,7 @@ public class SegmentFlushTest
     {
         Path tmpDir = Files.createTempDirectory("SegmentFlushTest");
         IndexDescriptor indexDescriptor = IndexDescriptor.create(new Descriptor(new File(tmpDir.toFile()), "ks", "cf", new SequenceBasedSSTableId(1)), Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
-        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "ts", TimestampType.instance, 1);
+        ColumnMetadata column = ColumnMetadata.regularColumn("sai", "internal", "ts", TimestampType.instance);
         StorageAttachedIndex index = SAITester.createMockIndex(column);
 
         SSTableIndexWriter writer = new SSTableIndexWriter(indexDescriptor, index, V1OnDiskFormat.SEGMENT_BUILD_MEMORY_LIMITER, () -> true);

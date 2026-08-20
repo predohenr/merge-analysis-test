@@ -21,41 +21,69 @@ package org.apache.cassandra.index.sai.disk.v1;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.EnumSet;
-import java.util.List;
-import java.util.Set;
+import org.apache.cassandra.index.sai.utils.NamedMemoryLimiter;
 
-import com.codahale.metrics.Gauge;
-import com.google.common.annotations.VisibleForTesting;
+import org.apache.cassandra.index.sai.utils.IndexTermType;
+
+import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+
+import org.apache.cassandra.utils.Throwables;
+
+import org.apache.cassandra.index.sai.SSTableContext;
+
+import org.apache.cassandra.db.lifecycle.ILifecycleTransaction;
+
+import org.apache.cassandra.index.sai.disk.v1.segment.SegmentBuilder;
 
 import org.apache.lucene.codecs.CodecUtil;
-import org.apache.lucene.index.CorruptIndexException;
-import org.apache.lucene.store.IndexInput;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.index.sai.disk.SSTableIndex;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.compaction.OperationType;
-import org.apache.cassandra.db.lifecycle.ILifecycleTransaction;
-import org.apache.cassandra.index.sai.SSTableContext;
-import org.apache.cassandra.index.sai.StorageAttachedIndex;
-import org.apache.cassandra.index.sai.disk.PerColumnIndexWriter;
-import org.apache.cassandra.index.sai.disk.PerSSTableIndexWriter;
-import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+
 import org.apache.cassandra.index.sai.disk.RowMapping;
-import org.apache.cassandra.index.sai.disk.SSTableIndex;
-import org.apache.cassandra.index.sai.disk.format.IndexComponent;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
-import org.apache.cassandra.index.sai.disk.format.OnDiskFormat;
-import org.apache.cassandra.index.sai.disk.v1.segment.SegmentBuilder;
-import org.apache.cassandra.index.sai.disk.v1.segment.SegmentMetadata;
-import org.apache.cassandra.index.sai.metrics.AbstractMetrics;
-import org.apache.cassandra.index.sai.utils.IndexIdentifier;
-import org.apache.cassandra.index.sai.utils.IndexTermType;
-import org.apache.cassandra.index.sai.utils.NamedMemoryLimiter;
-import org.apache.cassandra.io.sstable.format.SSTableReader;
+
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
+
+import org.apache.cassandra.index.sai.disk.format.IndexComponent;
+
+import org.apache.cassandra.index.sai.disk.v1.segment.SegmentMetadata;
+
+import org.apache.cassandra.db.compaction.OperationType;
+
+import org.apache.lucene.index.CorruptIndexException;
+
+import org.apache.cassandra.index.sai.StorageAttachedIndex;
+
+import org.apache.cassandra.index.sai.disk.PerColumnIndexWriter;
+
+import org.apache.cassandra.index.sai.utils.IndexIdentifier;
+
+import org.apache.cassandra.index.sai.disk.format.OnDiskFormat;
+
+import org.apache.cassandra.index.sai.metrics.AbstractMetrics;
+
 import org.apache.cassandra.metrics.DefaultNameFactory;
-import org.apache.cassandra.utils.Throwables;
+
+import java.util.List;
+
+import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+
+import com.google.common.annotations.VisibleForTesting;
+
+import com.codahale.metrics.Gauge;
+
+import org.apache.cassandra.index.sai.disk.PerSSTableIndexWriter;
+
+import org.apache.cassandra.io.sstable.format.SSTableReader;
+
+import org.slf4j.Logger;
+
+import org.apache.lucene.store.IndexInput;
+
+import org.slf4j.LoggerFactory;
+
+import java.util.Set;
 
 import static org.apache.cassandra.utils.FBUtilities.prettyPrintMemory;
 
@@ -336,7 +364,9 @@ public class V1OnDiskFormat implements OnDiskFormat
         catch (Exception e)
         {
             logger.warn(indexDescriptor.logMessage("{} failed for index component {} on SSTable {}"),
-                        checksum ? "Checksum validation" : "Validation", indexComponent, indexDescriptor.sstableDescriptor);
+                        checksum ? "Checksum validation" : "Validation",
+                        indexComponent,
+                        indexDescriptor.sstableDescriptor);
             rethrowIOException(e);
         }
     }
