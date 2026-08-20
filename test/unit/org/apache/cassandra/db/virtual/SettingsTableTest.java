@@ -26,34 +26,32 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.google.common.collect.ImmutableList;
-
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.yaml.snakeyaml.introspector.Property;
-
 import org.apache.cassandra.config.CassandraRelevantProperties;
-import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.DefaultLoader;
-import org.apache.cassandra.config.DurationSpec;
-import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions.Builder;
-import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions.InternodeEncryption;
-import org.apache.cassandra.config.JMXServerOptions;
-import org.apache.cassandra.config.ParameterizedClass;
 import org.apache.cassandra.config.Redacted;
-import org.apache.cassandra.config.TransparentDataEncryptionOptions;
-import org.apache.cassandra.cql3.CQLTester;
+import org.apache.cassandra.config.JMXServerOptions;
+import org.yaml.snakeyaml.introspector.Property;
+import org.slf4j.Logger;
 import org.apache.cassandra.distributed.shared.WithProperties;
-import org.apache.cassandra.security.SSLFactory;
-import org.apache.cassandra.utils.JsonUtils;
-
 import static java.util.stream.Collectors.toMap;
+import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions.InternodeEncryption;
+import org.apache.cassandra.utils.JsonUtils;
+import com.datastax.driver.core.ResultSet;
+import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions.Builder;
+import org.apache.cassandra.security.SSLFactory;
+import org.junit.Test;
+import com.datastax.driver.core.Row;
+import org.slf4j.LoggerFactory;
+import org.apache.cassandra.config.DurationSpec;
+import org.apache.cassandra.config.DefaultLoader;
 import static org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions.ClientAuth.REQUIRED;
+import org.apache.cassandra.cql3.CQLTester;
+import com.google.common.collect.ImmutableList;
+import org.junit.Before;
+import org.apache.cassandra.config.ParameterizedClass;
+import org.apache.cassandra.config.TransparentDataEncryptionOptions;
+import org.apache.cassandra.service.StartupChecks.StartupCheckType;
+import org.apache.cassandra.config.Config;
+import org.junit.Assert;
 
 public class SettingsTableTest extends CQLTester
 {
@@ -133,6 +131,17 @@ public class SettingsTableTest extends CQLTester
     {
         String q = "SELECT * FROM vts.settings WHERE name = 'EMPTY'";
         assertRowsNet(executeNet(q));
+    }
+
+    @Test
+    public void testStartupChecksWithEnumKeys() throws Throwable
+    {
+        Map<String, Object> checkDataResurrection = new LinkedHashMap<>();
+        checkDataResurrection.put("enabled", true);
+        config.startup_checks.put(StartupCheckType.check_data_resurrection, checkDataResurrection);
+
+        check("startup_checks", "{check_data_resurrection={enabled=true}}");
+        Assert.assertFalse(executeNet("SELECT * FROM vts.settings").all().isEmpty());
     }
 
     @Test
